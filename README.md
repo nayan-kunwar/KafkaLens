@@ -1,0 +1,83 @@
+# kafka-lens
+
+**Kafka Inspector MCP** — a Model Context Protocol server that gives AI agents structured, evidence-based access to Kafka operational information for investigating consumer lag, partition imbalance, stalled consumers, and related problems.
+
+> MCP is the interface. The diagnostic engine is the product.
+
+## Status
+
+Milestone **M0 — project foundation** (read-only, no Kafka connectivity yet).
+
+## Requirements
+
+- Node.js >= 20
+
+## Getting started
+
+```bash
+npm install
+cp .env.example .env
+```
+
+## Commands
+
+| Command                | Purpose                                |
+| ---------------------- | -------------------------------------- |
+| `npm run dev`          | Run server with hot reload (tsx)       |
+| `npm run build`        | Compile TypeScript to `dist/`          |
+| `npm start`            | Run compiled server                    |
+| `npm run typecheck`    | Type-check `src/`, `tests/`, config    |
+| `npm run lint`         | ESLint (typed rules, import ordering)  |
+| `npm run format`       | Prettier write                         |
+| `npm run format:check` | Prettier check                         |
+| `npm test`             | Vitest run                             |
+| `npm run check`        | typecheck + lint + format:check + test |
+
+## Configuration
+
+All configuration is environment-driven (see `.env.example`):
+
+| Variable                    | Default                                           | Description                        |
+| --------------------------- | ------------------------------------------------- | ---------------------------------- |
+| `NODE_ENV`                  | `development`                                     | Runtime environment                |
+| `KAFKA_BROKERS`             | `localhost:9092`                                  | Comma-separated broker list        |
+| `KAFKA_CLIENT_ID`           | `kafka-inspector`                                 | Kafka client id                    |
+| `KAFKA_SECURITY_PROTOCOL`   | `PLAINTEXT`                                       | `PLAINTEXT`/`SSL`/`SASL_*`         |
+| `POSTGRES_URL`              | `postgresql://postgres:postgres@localhost:5432/…` | Durable lag-history store          |
+| `REDIS_URL`                 | `redis://localhost:6379`                          | Short-lived cache                  |
+| `LOG_LEVEL`                 | `info`                                            | Pino log level (stderr)            |
+| `PARTITION_IMBALANCE_RATIO` | `5`                                               | Imbalance detection threshold      |
+| `STALL_WINDOW_SECONDS`      | `300`                                             | Stall detection observation window |
+
+Invalid configuration fails fast with a structured `CONFIG_INVALID` error that reports field names only — never values or credentials.
+
+## Architecture
+
+```
+MCP Layer            src/server, src/tools
+Application Services src/services
+Domain / Diagnosis    src/domain
+Infrastructure        src/schemas, src/config
+Cross-cutting         src/errors, src/utils
+```
+
+- Structured logs go to **stderr** (stdout is reserved for the MCP stdio protocol).
+- Read-only by design: no destructive Kafka operations.
+
+## MCP usage
+
+Register with an MCP client (stdio):
+
+```json
+{
+  "mcpServers": {
+    "kafka-lens": {
+      "command": "node",
+      "args": ["path/to/kafka-lens/dist/index.js"],
+      "env": { "KAFKA_BROKERS": "localhost:9092" }
+    }
+  }
+}
+```
+
+Available tool: `health_check`.
