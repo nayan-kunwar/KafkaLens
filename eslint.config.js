@@ -34,6 +34,7 @@ export default tseslint.config(
       ],
       'no-console': 'warn',
       'import-x/no-unresolved': ['error', { ignore: ['^@modelcontextprotocol/'] }],
+      'import-x/no-named-as-default-member': 'off',
       '@typescript-eslint/consistent-type-imports': [
         'error',
         { prefer: 'type-imports', fixStyle: 'inline-type-imports' },
@@ -48,6 +49,23 @@ export default tseslint.config(
     files: ['tests/**/*.ts'],
     rules: {
       'no-console': 'off',
+    },
+  },
+  {
+    files: ['src/**/*.ts'],
+    ignores: ['src/services/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'kafkajs',
+              message: 'KafkaJS may only be imported from src/services (AGENTS.md section 8).',
+            },
+          ],
+        },
+      ],
     },
   },
   prettier,

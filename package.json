@@ -19,6 +19,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test"
   },
   "keywords": [
@@ -37,6 +38,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@testcontainers/kafka": "^12.2.0",
     "@types/node": "^26.6.4",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
@@ -44,6 +46,7 @@
     "eslint-plugin-import-x": "^4.17.1",
     "pino-pretty": "^13.2.0",
     "prettier": "^3.9.9",
+    "testcontainers": "^12.2.0",
     "tsx": "^4.23.15",
     "typescript-eslint": "^8.71.1",
     "vitest": "^5.0.3"

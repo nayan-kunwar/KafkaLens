@@ -3,12 +3,13 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadEnv } from './config/env.js';
 import { AppError } from './errors/app-error.js';
 import { createMcpServer } from './server/mcp-server.js';
+import { AdminService } from './services/admin-service.js';
+import { createKafka } from './services/kafka-client.js';
 import { createLogger } from './utils/logger.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
   const logger = createLogger(env.LOG_LEVEL);
-  const server = createMcpServer();
 
   process.on('uncaughtException', (err) => {
     logger.fatal({ err }, 'uncaught exception');
@@ -18,6 +19,10 @@ async function main(): Promise<void> {
     logger.fatal({ err }, 'unhandled rejection');
     process.exit(1);
   });
+
+  const kafka = createKafka(env, logger);
+  const adminService = new AdminService(kafka);
+  const server = createMcpServer({ adminService, logger });
 
   await server.connect(new StdioServerTransport());
   logger.info(

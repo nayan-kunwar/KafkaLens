@@ -1,4 +1,5 @@
-export type ErrorCode = 'CONFIG_INVALID' | 'KAFKA_UNAVAILABLE' | 'NOT_FOUND' | 'INTERNAL';
+export type ErrorCode =
+  'CONFIG_INVALID' | 'KAFKA_UNAVAILABLE' | 'AUTH_FAILED' | 'KAFKA_ERROR' | 'NOT_FOUND' | 'INTERNAL';
 
 export class AppError extends Error {
   readonly code: ErrorCode;
