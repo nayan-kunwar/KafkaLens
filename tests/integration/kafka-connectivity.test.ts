@@ -10,7 +10,7 @@ import { createKafka } from '../../src/services/kafka-client.js';
 
 const PLAINTEXT_IMAGE = 'confluentinc/cp-kafka:7.7.1';
 const SASL_IMAGE = 'apache/kafka:3.9.0';
-const SASL_HOST_PORT = 19092;
+const SASL_HOST_PORT = 19094;
 
 const JAAS_CONFIG = `KafkaServer {
   org.apache.kafka.common.security.plain.PlainLoginModule required

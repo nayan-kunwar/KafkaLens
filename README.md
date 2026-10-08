@@ -20,6 +20,8 @@ npm install
 cp .env.example .env
 ```
 
+`.env` is loaded automatically at startup from the project root (then the working directory). Real environment variables always take precedence over the file.
+
 ## Commands
 
 | Command                    | Purpose                                |
@@ -37,7 +39,7 @@ cp .env.example .env
 
 ## Configuration
 
-All configuration is environment-driven (see `.env.example`):
+All configuration is environment-driven (see `.env.example`). A `.env` file in the project root (or working directory) is loaded automatically if present; values already set in the environment are never overridden.
 
 | Variable                        | Default                                           | Description                                     |
 | ------------------------------- | ------------------------------------------------- | ----------------------------------------------- |
@@ -88,6 +90,8 @@ Register with an MCP client (stdio):
   }
 }
 ```
+
+The `env` block is optional — a `.env` file next to the project works too.
 
 Available tools:
 

@@ -1,6 +1,7 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { loadEnv } from './config/env.js';
+import { loadDotenv } from './config/load-dotenv.js';
 import { AppError } from './errors/app-error.js';
 import { createMcpServer } from './server/mcp-server.js';
 import { AdminService } from './services/admin-service.js';
@@ -8,8 +9,10 @@ import { createKafka } from './services/kafka-client.js';
 import { createLogger } from './utils/logger.js';
 
 async function main(): Promise<void> {
+  const dotenvFiles = loadDotenv();
   const env = loadEnv();
   const logger = createLogger(env.LOG_LEVEL);
+  logger.debug({ files: dotenvFiles }, 'dotenv files loaded');
 
   process.on('uncaughtException', (err) => {
     logger.fatal({ err }, 'uncaught exception');
