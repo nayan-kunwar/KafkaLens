@@ -8,6 +8,8 @@
 
 Milestone **M2 — topic inspection** (read-only; PLAINTEXT and SASL/SSL supported).
 
+New to MCP? Hands-on, spec-grounded learning notes from building this server live in [docs/mcp/](docs/mcp/) — error handling, the stdio transport, and the MCP Inspector workflow.
+
 ## Requirements
 
 - Node.js >= 20
