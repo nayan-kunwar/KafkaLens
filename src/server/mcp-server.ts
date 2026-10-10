@@ -1,9 +1,20 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Logger } from 'pino';
 
+import {
+  getConsumerAssignmentsShape,
+  getConsumerGroupShape,
+  listConsumerGroupsShape,
+} from '../schemas/consumer-group.js';
 import { getPartitionInfoShape, getTopicMetadataShape, listTopicsShape } from '../schemas/topic.js';
 import type { AdminService } from '../services/admin-service.js';
+import type { ConsumerGroupsService } from '../services/consumer-groups-service.js';
 import { createGetClusterInfoHandler } from '../tools/cluster-info.js';
+import {
+  createGetConsumerAssignmentsHandler,
+  createGetConsumerGroupHandler,
+  createListConsumerGroupsHandler,
+} from '../tools/consumer-groups.js';
 import {
   createGetPartitionInfoHandler,
   createGetTopicMetadataHandler,
@@ -14,6 +25,7 @@ export const SERVER_INFO = { name: 'kafka-lens', version: '0.1.0' } as const;
 
 export interface ServerDeps {
   adminService: AdminService;
+  consumerGroupsService: ConsumerGroupsService;
   logger: Logger;
 }
 
@@ -75,6 +87,44 @@ export function createMcpServer(deps: ServerDeps): McpServer {
       inputSchema: getPartitionInfoShape,
     },
     createGetPartitionInfoHandler(deps.adminService, deps.logger),
+  );
+
+  server.registerTool(
+    'list_consumer_groups',
+    {
+      title: 'List consumer groups',
+      description:
+        'Lists consumer group ids in the cluster. Optional groupIdContains (literal substring) ' +
+        'and protocolType (exact match) filter the list; limit caps the result (default 100, max 500). ' +
+        'Response includes state and memberCount per group with total and truncated flags. Read-only.',
+      inputSchema: listConsumerGroupsShape,
+    },
+    createListConsumerGroupsHandler(deps.consumerGroupsService, deps.logger),
+  );
+
+  server.registerTool(
+    'get_consumer_group',
+    {
+      title: 'Get consumer group',
+      description:
+        'Returns state, protocol, and members for one consumer group. ' +
+        'Errors with NOT_FOUND if the group does not exist. Read-only.',
+      inputSchema: getConsumerGroupShape,
+    },
+    createGetConsumerGroupHandler(deps.consumerGroupsService, deps.logger),
+  );
+
+  server.registerTool(
+    'get_consumer_assignments',
+    {
+      title: 'Get consumer assignments',
+      description:
+        'Returns decoded topic-partition assignments per member for one consumer group. ' +
+        'A null assignment means unknown (missing or undecodable buffer), not empty. ' +
+        'Errors with NOT_FOUND if the group does not exist. Read-only.',
+      inputSchema: getConsumerAssignmentsShape,
+    },
+    createGetConsumerAssignmentsHandler(deps.consumerGroupsService, deps.logger),
   );
 
   return server;

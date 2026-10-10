@@ -5,6 +5,7 @@ import { loadDotenv } from './config/load-dotenv.js';
 import { AppError } from './errors/app-error.js';
 import { createMcpServer } from './server/mcp-server.js';
 import { AdminService } from './services/admin-service.js';
+import { ConsumerGroupsService } from './services/consumer-groups-service.js';
 import { createKafka } from './services/kafka-client.js';
 import { createLogger } from './utils/logger.js';
 
@@ -25,7 +26,8 @@ async function main(): Promise<void> {
 
   const kafka = createKafka(env, logger);
   const adminService = new AdminService(kafka);
-  const server = createMcpServer({ adminService, logger });
+  const consumerGroupsService = new ConsumerGroupsService(kafka);
+  const server = createMcpServer({ adminService, consumerGroupsService, logger });
 
   await server.connect(new StdioServerTransport());
   logger.info(

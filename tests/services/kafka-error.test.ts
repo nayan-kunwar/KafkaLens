@@ -72,6 +72,18 @@ describe('mapKafkaError', () => {
     expect(mapped.context?.kafkaType).toBe('UNKNOWN_TOPIC_OR_PARTITION');
   });
 
+  it('maps GROUP_ID_NOT_FOUND protocol errors to NOT_FOUND', () => {
+    const mapped = mapKafkaError(protocolError('GROUP_ID_NOT_FOUND'));
+    expect(mapped.code).toBe('NOT_FOUND');
+    expect(mapped.context?.kafkaType).toBe('GROUP_ID_NOT_FOUND');
+  });
+
+  it('maps GROUP_AUTHORIZATION_FAILED protocol errors to AUTH_FAILED', () => {
+    const mapped = mapKafkaError(protocolError('GROUP_AUTHORIZATION_FAILED'));
+    expect(mapped.code).toBe('AUTH_FAILED');
+    expect(mapped.context?.kafkaType).toBe('GROUP_AUTHORIZATION_FAILED');
+  });
+
   it('maps other protocol errors to KAFKA_ERROR', () => {
     expect(mapKafkaError(protocolError('UNKNOWN_SERVER_ERROR')).code).toBe('KAFKA_ERROR');
   });

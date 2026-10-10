@@ -6,7 +6,7 @@
 
 ## Status
 
-Milestone **M2 — topic inspection** (read-only; PLAINTEXT and SASL/SSL supported).
+Milestone **M3 — consumer groups** (read-only; PLAINTEXT and SASL/SSL supported).
 
 New to MCP? Hands-on, spec-grounded learning notes from building this server live in [docs/mcp/](docs/mcp/) — error handling, the stdio transport, and the MCP Inspector workflow.
 
@@ -101,4 +101,7 @@ Available tools:
 - `get_cluster_info` — live cluster id, controller, and broker list from Kafka
 - `list_topics` — topic names with optional substring filter and bounded limit (total/truncated flags)
 - `get_topic_metadata` — partition count and per-partition leader, replicas, and ISR for one topic
-- `get_partition_info` — per-partition leader, replicas, ISR, and high/low watermarks (decimal strings)
+- `get_partition_info` — per-partition leader, replicas, ISR, and high/low watermarks (decimal strings; null means unknown)
+- `list_consumer_groups` — group ids with state and memberCount, optional substring/protocol filters and bounded limit (total/truncated flags)
+- `get_consumer_group` — state, protocol, and members for one group; NOT_FOUND when unknown
+- `get_consumer_assignments` — decoded topic-partition assignments per member (null means unknown, not empty)

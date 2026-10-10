@@ -44,20 +44,23 @@ sequenceDiagram
 
 ## How kafka-lens registers tools
 
-- `src/server/mcp-server.ts` registers 5 tools via the MCP SDK's `registerTool`, passing
+- `src/server/mcp-server.ts` registers 8 tools via the MCP SDK's `registerTool`, passing
   **Zod raw shapes** as `inputSchema` — the SDK converts them to JSON Schema and
   validates every `tools/call` before our handler runs (schema violations become
   JSON-RPC `-32602`, layer 1 in note 01).
 - Handlers live in `src/tools/` and are wrapped by the shared `executeTool` runner
   (`src/tools/run-tool.ts`) so every tool returns a uniform `CallToolResult`.
 
-| Tool                 | Returns                                                     |
-| -------------------- | ----------------------------------------------------------- |
-| `health_check`       | Server liveness                                             |
-| `get_cluster_info`   | Cluster id, controller, brokers (live)                      |
-| `list_topics`        | Topic names + `total`/`truncated` flags, bounded by `limit` |
-| `get_topic_metadata` | Partition count, per-partition leader/replicas/ISR          |
-| `get_partition_info` | Per-partition leader/replicas/ISR + high/low watermarks     |
+| Tool                       | Returns                                                     |
+| -------------------------- | ----------------------------------------------------------- |
+| `health_check`             | Server liveness                                             |
+| `get_cluster_info`         | Cluster id, controller, brokers (live)                      |
+| `list_topics`              | Topic names + `total`/`truncated` flags, bounded by `limit` |
+| `get_topic_metadata`       | Partition count, per-partition leader/replicas/ISR          |
+| `get_partition_info`       | Per-partition leader/replicas/ISR + high/low watermarks     |
+| `list_consumer_groups`     | Group ids + state/`memberCount`, bounded by `limit`         |
+| `get_consumer_group`       | State, protocol, members for one group                      |
+| `get_consumer_assignments` | Decoded topic-partition assignments per member              |
 
 ## Running it in MCP Inspector
 
