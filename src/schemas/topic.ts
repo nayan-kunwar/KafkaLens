@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const topicNameSchema = z
+export const topicNameSchema = z
   .string()
   .min(1)
   .max(249)

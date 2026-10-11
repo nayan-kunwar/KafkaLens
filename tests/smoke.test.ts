@@ -7,12 +7,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createMcpServer, SERVER_INFO } from '../src/server/mcp-server.js';
 import { AdminService } from '../src/services/admin-service.js';
 import { ConsumerGroupsService } from '../src/services/consumer-groups-service.js';
+import { OffsetsService } from '../src/services/offsets-service.js';
 
 describe('smoke', () => {
   const logger = pino({ level: 'silent' });
+  const kafka = {} as Kafka;
+  const consumerGroupsService = new ConsumerGroupsService(kafka);
   const server = createMcpServer({
-    adminService: new AdminService({} as Kafka),
-    consumerGroupsService: new ConsumerGroupsService({} as Kafka),
+    adminService: new AdminService(kafka),
+    consumerGroupsService,
+    offsetsService: new OffsetsService(kafka, consumerGroupsService),
     logger,
   });
   const client = new Client({ name: 'kafka-lens-test', version: '0.0.0' });
@@ -44,6 +48,7 @@ describe('smoke', () => {
         'list_consumer_groups',
         'get_consumer_group',
         'get_consumer_assignments',
+        'get_consumer_lag',
       ]),
     );
   });

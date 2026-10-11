@@ -6,15 +6,18 @@ import {
   getConsumerGroupShape,
   listConsumerGroupsShape,
 } from '../schemas/consumer-group.js';
+import { getConsumerLagShape } from '../schemas/lag.js';
 import { getPartitionInfoShape, getTopicMetadataShape, listTopicsShape } from '../schemas/topic.js';
 import type { AdminService } from '../services/admin-service.js';
 import type { ConsumerGroupsService } from '../services/consumer-groups-service.js';
+import type { OffsetsService } from '../services/offsets-service.js';
 import { createGetClusterInfoHandler } from '../tools/cluster-info.js';
 import {
   createGetConsumerAssignmentsHandler,
   createGetConsumerGroupHandler,
   createListConsumerGroupsHandler,
 } from '../tools/consumer-groups.js';
+import { createGetConsumerLagHandler } from '../tools/offsets.js';
 import {
   createGetPartitionInfoHandler,
   createGetTopicMetadataHandler,
@@ -26,6 +29,7 @@ export const SERVER_INFO = { name: 'kafka-lens', version: '0.1.0' } as const;
 export interface ServerDeps {
   adminService: AdminService;
   consumerGroupsService: ConsumerGroupsService;
+  offsetsService: OffsetsService;
   logger: Logger;
 }
 
@@ -125,6 +129,19 @@ export function createMcpServer(deps: ServerDeps): McpServer {
       inputSchema: getConsumerAssignmentsShape,
     },
     createGetConsumerAssignmentsHandler(deps.consumerGroupsService, deps.logger),
+  );
+
+  server.registerTool(
+    'get_consumer_lag',
+    {
+      title: 'Get consumer lag',
+      description:
+        'Returns per-partition lag (high watermark minus committed offset) for one consumer group. ' +
+        'With topic, returns one row per partition; without topic, one summary row per committed topic. ' +
+        'Lag null means unknown (never zero-filled); totals sum known partitions only. Read-only.',
+      inputSchema: getConsumerLagShape,
+    },
+    createGetConsumerLagHandler(deps.offsetsService, deps.logger),
   );
 
   return server;

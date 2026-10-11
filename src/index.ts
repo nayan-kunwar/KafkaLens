@@ -7,6 +7,7 @@ import { createMcpServer } from './server/mcp-server.js';
 import { AdminService } from './services/admin-service.js';
 import { ConsumerGroupsService } from './services/consumer-groups-service.js';
 import { createKafka } from './services/kafka-client.js';
+import { OffsetsService } from './services/offsets-service.js';
 import { createLogger } from './utils/logger.js';
 
 async function main(): Promise<void> {
@@ -27,7 +28,8 @@ async function main(): Promise<void> {
   const kafka = createKafka(env, logger);
   const adminService = new AdminService(kafka);
   const consumerGroupsService = new ConsumerGroupsService(kafka);
-  const server = createMcpServer({ adminService, consumerGroupsService, logger });
+  const offsetsService = new OffsetsService(kafka, consumerGroupsService);
+  const server = createMcpServer({ adminService, consumerGroupsService, offsetsService, logger });
 
   await server.connect(new StdioServerTransport());
   logger.info(

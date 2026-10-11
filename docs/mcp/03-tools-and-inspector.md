@@ -44,7 +44,7 @@ sequenceDiagram
 
 ## How kafka-lens registers tools
 
-- `src/server/mcp-server.ts` registers 8 tools via the MCP SDK's `registerTool`, passing
+- `src/server/mcp-server.ts` registers 9 tools via the MCP SDK's `registerTool`, passing
   **Zod raw shapes** as `inputSchema` — the SDK converts them to JSON Schema and
   validates every `tools/call` before our handler runs (schema violations become
   JSON-RPC `-32602`, layer 1 in note 01).
@@ -61,6 +61,7 @@ sequenceDiagram
 | `list_consumer_groups`     | Group ids + state/`memberCount`, bounded by `limit`         |
 | `get_consumer_group`       | State, protocol, members for one group                      |
 | `get_consumer_assignments` | Decoded topic-partition assignments per member              |
+| `get_consumer_lag`         | Per-partition lag or per-topic summaries, unknown kept null |
 
 ## Running it in MCP Inspector
 

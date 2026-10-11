@@ -6,7 +6,7 @@
 
 ## Status
 
-Milestone **M3 — consumer groups** (read-only; PLAINTEXT and SASL/SSL supported).
+Milestone **M4 — consumer lag** (read-only; PLAINTEXT and SASL/SSL supported).
 
 New to MCP? Hands-on, spec-grounded learning notes from building this server live in [docs/mcp/](docs/mcp/) — error handling, the stdio transport, and the MCP Inspector workflow.
 
@@ -105,3 +105,4 @@ Available tools:
 - `list_consumer_groups` — group ids with state and memberCount, optional substring/protocol filters and bounded limit (total/truncated flags)
 - `get_consumer_group` — state, protocol, and members for one group; NOT_FOUND when unknown
 - `get_consumer_assignments` — decoded topic-partition assignments per member (null means unknown, not empty)
+- `get_consumer_lag` — per-partition lag for one group (per-partition rows with topic, per-topic summaries without); null lag means unknown, totals sum known partitions only
