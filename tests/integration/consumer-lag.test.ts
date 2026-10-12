@@ -1,10 +1,13 @@
 import { KafkaContainer, type StartedKafkaContainer } from '@testcontainers/kafka';
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { Pool } from 'pg';
 import { pino } from 'pino';
 import { Wait } from 'testcontainers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { loadEnv } from '../../src/config/env.js';
 import { AppError } from '../../src/errors/app-error.js';
+import { LagStore } from '../../src/persistence/lag-store.js';
 import { ConsumerGroupsService } from '../../src/services/consumer-groups-service.js';
 import { createKafka } from '../../src/services/kafka-client.js';
 import {
@@ -24,9 +27,9 @@ function envFor(brokers: string): NodeJS.ProcessEnv {
   return { NODE_ENV: 'test', KAFKA_BROKERS: brokers, KAFKA_RETRY_ATTEMPTS: '5' };
 }
 
-function serviceFor(brokers: string): OffsetsService {
+function serviceFor(brokers: string, lagStore?: LagStore): OffsetsService {
   const kafka = createKafka(loadEnv(envFor(brokers)), silentLogger());
-  return new OffsetsService(kafka, new ConsumerGroupsService(kafka));
+  return new OffsetsService(kafka, new ConsumerGroupsService(kafka), lagStore);
 }
 
 async function expectAppError(promise: Promise<unknown>, code: string): Promise<AppError> {
@@ -45,12 +48,17 @@ async function expectAppError(promise: Promise<unknown>, code: string): Promise<
 describe('consumer lag', () => {
   let container: StartedKafkaContainer;
   let brokers: string;
+  let pgContainer: StartedPostgreSqlContainer;
+  let lagStore: LagStore;
 
   beforeAll(async () => {
     container = await new KafkaContainer(PLAINTEXT_IMAGE)
       .withWaitStrategy(Wait.forLogMessage(/\[KafkaServer id=1\] started/, 1))
       .start();
     brokers = `${container.getHost()}:${container.getMappedPort(9093)}`;
+    pgContainer = await new PostgreSqlContainer('postgres:16-alpine').start();
+    lagStore = new LagStore(new Pool({ connectionString: pgContainer.getConnectionUri() }));
+    await lagStore.ensureSchema();
 
     const kafka = createKafka(loadEnv(envFor(brokers)), silentLogger());
     const admin = kafka.admin();
@@ -92,6 +100,8 @@ describe('consumer lag', () => {
   }, 300_000);
 
   afterAll(async () => {
+    await lagStore?.close();
+    await pgContainer?.stop();
     await container?.stop();
   });
 
@@ -165,6 +175,34 @@ describe('consumer lag', () => {
     } finally {
       await consumer.disconnect().catch(() => undefined);
     }
+  });
+
+  it('persists observations to lag history on every lag call', async () => {
+    const service = serviceFor(brokers, lagStore);
+    await service.getConsumerLag(GROUP, TOPIC);
+
+    const partitionZero = await lagStore.queryHistory({
+      groupId: GROUP,
+      topic: TOPIC,
+      partition: 0,
+      limit: 10,
+    });
+    expect(partitionZero.observations[0]).toMatchObject({
+      highWatermark: '10',
+      committedOffset: '4',
+      lag: '6',
+    });
+
+    const partitionOne = await lagStore.queryHistory({
+      groupId: GROUP,
+      topic: TOPIC,
+      partition: 1,
+      limit: 10,
+    });
+    expect(partitionOne.observations[0]).toMatchObject({
+      highWatermark: '0',
+      lag: null,
+    });
   });
 
   it('throws NOT_FOUND for unknown group and unknown topic', async () => {

@@ -1,8 +1,10 @@
 import type { Kafka } from 'kafkajs';
 import kafkajs from 'kafkajs';
+import { pino } from 'pino';
 import { describe, expect, it } from 'vitest';
 
 import { AppError } from '../../src/errors/app-error.js';
+import type { LagObservationRow, LagStore } from '../../src/persistence/lag-store.js';
 import type {
   ConsumerGroupResult,
   ConsumerGroupsService,
@@ -14,6 +16,7 @@ import {
 } from '../../src/services/offsets-service.js';
 
 interface StubAdmin {
+  describeCluster?: () => Promise<{ clusterId: string }>;
   fetchTopicMetadata?: (options?: { topics: string[] }) => Promise<{ topics: unknown[] }>;
   fetchTopicOffsets?: (
     topic: string,
@@ -285,5 +288,115 @@ describe('getConsumerLag for a whole group', () => {
     const service = serviceWith({ fetchOffsets: () => Promise.resolve([]) });
     const result = (await service.getConsumerLag(GROUP)) as GroupLagResult;
     expect(result).toMatchObject({ topics: [], topicCount: 0, truncated: false });
+  });
+});
+
+describe('lag history recording', () => {
+  const silentLogger = pino({ level: 'silent' });
+
+  function recordingService(stub: StubAdmin, lagStore: Partial<LagStore>): OffsetsService {
+    const admin = {
+      connect: () => Promise.resolve(),
+      disconnect: () => Promise.resolve(),
+      describeCluster: () => Promise.resolve({ clusterId: 'test-cluster' }),
+      ...stub,
+    };
+    const kafka = { admin: () => admin };
+    const consumerGroups = {
+      getConsumerGroup: (groupId: string) =>
+        Promise.resolve({
+          groupId,
+          state: 'Stable',
+          protocolType: 'consumer',
+          protocol: 'range',
+          memberCount: 1,
+          members: [],
+          truncated: false,
+          observedAt: '2026-01-01T00:00:00.000Z',
+        } satisfies ConsumerGroupResult),
+    };
+    return new OffsetsService(
+      kafka as unknown as Kafka,
+      consumerGroups as unknown as ConsumerGroupsService,
+      lagStore as LagStore,
+      silentLogger,
+    );
+  }
+
+  it('records per-partition rows with unknowns kept null', async () => {
+    const recorded: LagObservationRow[] = [];
+    const service = recordingService(topicStubs(), {
+      recordBatch: (rows: LagObservationRow[]) => {
+        recorded.push(...rows);
+        return Promise.resolve();
+      },
+    });
+
+    await service.getConsumerLag(GROUP, TOPIC);
+    expect(recorded).toHaveLength(3);
+    expect(recorded[0]).toMatchObject({
+      clusterId: 'test-cluster',
+      topic: TOPIC,
+      consumerGroup: GROUP,
+      partition: 0,
+      highWatermark: '100',
+      committedOffset: '40',
+      lag: '60',
+    });
+    expect(recorded[1]).toMatchObject({ partition: 1, lag: null, committedOffset: '-1' });
+    expect(recorded[2]).toMatchObject({ partition: 2, lag: null, committedOffset: null });
+    for (const row of recorded) {
+      expect(() => new Date(row.observedAt).toISOString()).not.toThrow();
+    }
+  });
+
+  it('still returns lag when recording fails', async () => {
+    const service = recordingService(topicStubs(), {
+      recordBatch: () => Promise.reject(new AppError('STORE_UNAVAILABLE', 'down')),
+    });
+
+    const result = (await service.getConsumerLag(GROUP, TOPIC)) as TopicLagResult;
+    expect(result.totalLag).toBe('60');
+  });
+
+  it('skips recording when the cluster id cannot be resolved', async () => {
+    let recorded = 0;
+    const admin = {
+      connect: () => Promise.resolve(),
+      disconnect: () => Promise.resolve(),
+      describeCluster: () => Promise.reject(new Error('no coordinator')),
+      fetchTopicMetadata: () => Promise.resolve(meta(TOPIC, [0])),
+      fetchTopicOffsets: () => Promise.resolve([{ partition: 0, high: '1', low: '0' }]),
+      fetchOffsets: () => Promise.resolve([]),
+    };
+    const kafka = { admin: () => admin };
+    const consumerGroups = {
+      getConsumerGroup: (groupId: string) =>
+        Promise.resolve({
+          groupId,
+          state: 'Stable',
+          protocolType: 'consumer',
+          protocol: 'range',
+          memberCount: 0,
+          members: [],
+          truncated: false,
+          observedAt: '2026-01-01T00:00:00.000Z',
+        } satisfies ConsumerGroupResult),
+    };
+    const service = new OffsetsService(
+      kafka as unknown as Kafka,
+      consumerGroups as unknown as ConsumerGroupsService,
+      {
+        recordBatch: () => {
+          recorded += 1;
+          return Promise.resolve();
+        },
+      } as unknown as LagStore,
+      silentLogger,
+    );
+
+    const result = (await service.getConsumerLag(GROUP, TOPIC)) as TopicLagResult;
+    expect(result.unknownPartitionCount).toBe(1);
+    expect(recorded).toBe(0);
   });
 });

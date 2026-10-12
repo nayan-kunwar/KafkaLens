@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadEnv } from './config/env.js';
 import { loadDotenv } from './config/load-dotenv.js';
 import { AppError } from './errors/app-error.js';
+import { LagStore } from './persistence/lag-store.js';
 import { createMcpServer } from './server/mcp-server.js';
 import { AdminService } from './services/admin-service.js';
 import { ConsumerGroupsService } from './services/consumer-groups-service.js';
@@ -28,8 +29,33 @@ async function main(): Promise<void> {
   const kafka = createKafka(env, logger);
   const adminService = new AdminService(kafka);
   const consumerGroupsService = new ConsumerGroupsService(kafka);
-  const offsetsService = new OffsetsService(kafka, consumerGroupsService);
-  const server = createMcpServer({ adminService, consumerGroupsService, offsetsService, logger });
+  const lagStore = LagStore.fromUrl(env.POSTGRES_URL);
+  // History is best-effort: the server starts and serves lag tools even when
+  // PostgreSQL is unreachable; history reads then report STORE_UNAVAILABLE.
+  try {
+    await lagStore.ensureSchema();
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'lag history unavailable, continuing without persistence',
+    );
+  }
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(signal, () => {
+      lagStore
+        .close()
+        .catch(() => undefined)
+        .finally(() => process.exit(0));
+    });
+  }
+  const offsetsService = new OffsetsService(kafka, consumerGroupsService, lagStore, logger);
+  const server = createMcpServer({
+    adminService,
+    consumerGroupsService,
+    offsetsService,
+    lagStore,
+    logger,
+  });
 
   await server.connect(new StdioServerTransport());
   logger.info(

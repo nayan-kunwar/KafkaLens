@@ -1,7 +1,9 @@
 import type { Admin, Kafka } from 'kafkajs';
+import type { Logger } from 'pino';
 
 import { calculatePartitionLag, sumLags, type LagUnknownReason } from '../domain/lag.js';
 import { AppError } from '../errors/app-error.js';
+import type { LagObservationRow, LagStore } from '../persistence/lag-store.js';
 
 import type { ConsumerGroupsService } from './consumer-groups-service.js';
 import { mapKafkaError } from './kafka-error.js';
@@ -56,10 +58,20 @@ export interface GroupLagResult {
 export class OffsetsService {
   private readonly kafka: Kafka;
   private readonly consumerGroups: ConsumerGroupsService;
+  private readonly lagStore: LagStore | undefined;
+  private readonly logger: Logger | undefined;
+  private clusterId: string | undefined;
 
-  constructor(kafka: Kafka, consumerGroups: ConsumerGroupsService) {
+  constructor(
+    kafka: Kafka,
+    consumerGroups: ConsumerGroupsService,
+    lagStore?: LagStore,
+    logger?: Logger,
+  ) {
     this.kafka = kafka;
     this.consumerGroups = consumerGroups;
+    this.lagStore = lagStore;
+    this.logger = logger;
   }
 
   async getConsumerLag(groupId: string, topic?: string): Promise<TopicLagResult | GroupLagResult> {
@@ -68,10 +80,61 @@ export class OffsetsService {
     const group = await this.consumerGroups.getConsumerGroup(groupId);
     return this.withAdmin(async (admin) => {
       if (topic !== undefined) {
-        return this.topicLag(admin, groupId, group.state, topic);
+        const result = await this.topicLag(admin, groupId, group.state, topic);
+        await this.bestEffortRecord(admin, groupId, this.toTopicRows(result));
+        return result;
       }
-      return this.groupLag(admin, groupId, group.state);
+      const { result, rows } = await this.groupLag(admin, groupId, group.state);
+      await this.bestEffortRecord(admin, groupId, rows);
+      return result;
     });
+  }
+
+  private toTopicRows(result: TopicLagResult): { topic: string; row: PartitionLagRow }[] {
+    return [
+      ...result.partitions.map((row) => ({ topic: result.topic, row })),
+      ...result.orphanedCommits.map((orphan) => ({
+        topic: result.topic,
+        row: {
+          partitionId: orphan.partition,
+          highWatermark: null,
+          committedOffset: orphan.committedOffset,
+          ...calculatePartitionLag(null, orphan.committedOffset),
+        } satisfies PartitionLagRow,
+      })),
+    ];
+  }
+
+  private async bestEffortRecord(
+    admin: Admin,
+    groupId: string,
+    rows: { topic: string; row: PartitionLagRow }[],
+  ): Promise<void> {
+    if (this.lagStore === undefined || rows.length === 0) return;
+    try {
+      if (this.clusterId === undefined) {
+        const cluster = await admin.describeCluster();
+        this.clusterId = cluster.clusterId;
+      }
+      const observedAt = new Date().toISOString();
+      const records: LagObservationRow[] = rows.map(({ topic, row }) => ({
+        clusterId: this.clusterId as string,
+        topic,
+        consumerGroup: groupId,
+        partition: row.partitionId,
+        highWatermark: row.highWatermark,
+        committedOffset: row.committedOffset,
+        lag: row.lag,
+        observedAt,
+      }));
+      await this.lagStore.recordBatch(records);
+    } catch (err) {
+      // History is best-effort: a store failure must never fail the lag call.
+      this.logger?.warn(
+        { err: err instanceof Error ? err.message : String(err), groupId },
+        'lag history record skipped',
+      );
+    }
   }
 
   private async topicLag(
@@ -94,18 +157,11 @@ export class OffsetsService {
       .map(([partition, committedOffset]) => ({ partition, committedOffset }))
       .sort((a, b) => a.partition - b.partition);
 
-    const allRows: PartitionLagRow[] = [...partitionIds]
-      .sort((a, b) => a - b)
-      .map((partitionId) => {
-        const highWatermark = highByPartition.get(partitionId) ?? null;
-        const committedOffset = committedByPartition.get(partitionId) ?? null;
-        return {
-          partitionId,
-          highWatermark,
-          committedOffset,
-          ...calculatePartitionLag(highWatermark, committedOffset),
-        };
-      });
+    const allRows: PartitionLagRow[] = this.buildRows(
+      partitionIds,
+      highByPartition,
+      committedByPartition,
+    );
 
     const { total, unknownCount } = sumLags(allRows.map((row) => row.lag));
     const page = allRows.slice(0, MAX_PARTITION_ROWS);
@@ -127,23 +183,36 @@ export class OffsetsService {
     admin: Admin,
     groupId: string,
     groupState: string,
-  ): Promise<GroupLagResult> {
+  ): Promise<{ result: GroupLagResult; rows: { topic: string; row: PartitionLagRow }[] }> {
     const commits = await this.fetchCommits(admin, groupId);
     const topics = [...commits.keys()].sort((a, b) => a.localeCompare(b));
     const topicCount = topics.length;
     const page = topics.slice(0, MAX_TOPIC_ROWS);
+    const observedAt = new Date().toISOString();
 
     const summaries: TopicLagSummary[] = [];
+    const rows: { topic: string; row: PartitionLagRow }[] = [];
     for (const topic of page) {
-      summaries.push(await this.summarizeTopic(admin, topic, commits.get(topic) ?? []));
+      const { summary, topicRows } = await this.summarizeTopic(
+        admin,
+        topic,
+        commits.get(topic) ?? [],
+      );
+      summaries.push(summary);
+      for (const row of topicRows) {
+        rows.push({ topic, row });
+      }
     }
     return {
-      groupId,
-      groupState,
-      topics: summaries,
-      topicCount,
-      truncated: topicCount > page.length,
-      observedAt: new Date().toISOString(),
+      result: {
+        groupId,
+        groupState,
+        topics: summaries,
+        topicCount,
+        truncated: topicCount > page.length,
+        observedAt,
+      },
+      rows,
     };
   }
 
@@ -151,7 +220,7 @@ export class OffsetsService {
     admin: Admin,
     topic: string,
     commits: { partition: number; offset: string }[],
-  ): Promise<TopicLagSummary> {
+  ): Promise<{ summary: TopicLagSummary; topicRows: PartitionLagRow[] }> {
     let watermarks: { partition: number; high: string }[];
     try {
       watermarks = await admin.fetchTopicOffsets(topic);
@@ -161,34 +230,58 @@ export class OffsetsService {
       const mapped = mapKafkaError(err);
       if (mapped.code === 'NOT_FOUND') {
         return {
-          topic,
-          partitionCount: commits.length,
-          totalLag: null,
-          unknownPartitions: commits.length,
-          topicMissing: true,
+          summary: {
+            topic,
+            partitionCount: commits.length,
+            totalLag: null,
+            unknownPartitions: commits.length,
+            topicMissing: true,
+          },
+          topicRows: commits.map((entry) => ({
+            partitionId: entry.partition,
+            highWatermark: null,
+            committedOffset: entry.offset,
+            ...calculatePartitionLag(null, entry.offset),
+          })),
         };
       }
       throw mapped;
     }
     const highByPartition = new Map(watermarks.map((entry) => [entry.partition, entry.high]));
-    const partitions = new Set<number>([
-      ...watermarks.map((entry) => entry.partition),
-      ...commits.map((entry) => entry.partition),
-    ]);
-    const lags = [...partitions].map(
-      (partitionId) =>
-        calculatePartitionLag(
-          highByPartition.get(partitionId) ?? null,
-          commits.find((entry) => entry.partition === partitionId)?.offset ?? null,
-        ).lag,
-    );
-    const { total, unknownCount } = sumLags(lags);
+    const committedByPartition = new Map(commits.map((entry) => [entry.partition, entry.offset]));
+    const partitionIds = [
+      ...new Set<number>([...highByPartition.keys(), ...committedByPartition.keys()]),
+    ];
+    const topicRows = this.buildRows(partitionIds, highByPartition, committedByPartition);
+    const { total, unknownCount } = sumLags(topicRows.map((row) => row.lag));
     return {
-      topic,
-      partitionCount: partitions.size,
-      totalLag: total,
-      unknownPartitions: unknownCount,
+      summary: {
+        topic,
+        partitionCount: topicRows.length,
+        totalLag: total,
+        unknownPartitions: unknownCount,
+      },
+      topicRows,
     };
+  }
+
+  private buildRows(
+    partitionIds: number[],
+    highByPartition: Map<number, string>,
+    committedByPartition: Map<number, string>,
+  ): PartitionLagRow[] {
+    return [...partitionIds]
+      .sort((a, b) => a - b)
+      .map((partitionId) => {
+        const highWatermark = highByPartition.get(partitionId) ?? null;
+        const committedOffset = committedByPartition.get(partitionId) ?? null;
+        return {
+          partitionId,
+          highWatermark,
+          committedOffset,
+          ...calculatePartitionLag(highWatermark, committedOffset),
+        };
+      });
   }
 
   private async fetchPartitionIds(admin: Admin, topic: string): Promise<number[]> {

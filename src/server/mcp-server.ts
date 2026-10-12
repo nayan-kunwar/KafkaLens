@@ -1,11 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Logger } from 'pino';
 
+import type { LagStore } from '../persistence/lag-store.js';
 import {
   getConsumerAssignmentsShape,
   getConsumerGroupShape,
   listConsumerGroupsShape,
 } from '../schemas/consumer-group.js';
+import { getLagHistoryShape } from '../schemas/history.js';
 import { getConsumerLagShape } from '../schemas/lag.js';
 import { getPartitionInfoShape, getTopicMetadataShape, listTopicsShape } from '../schemas/topic.js';
 import type { AdminService } from '../services/admin-service.js';
@@ -17,6 +19,7 @@ import {
   createGetConsumerGroupHandler,
   createListConsumerGroupsHandler,
 } from '../tools/consumer-groups.js';
+import { createGetLagHistoryHandler } from '../tools/history.js';
 import { createGetConsumerLagHandler } from '../tools/offsets.js';
 import {
   createGetPartitionInfoHandler,
@@ -30,6 +33,7 @@ export interface ServerDeps {
   adminService: AdminService;
   consumerGroupsService: ConsumerGroupsService;
   offsetsService: OffsetsService;
+  lagStore: LagStore;
   logger: Logger;
 }
 
@@ -138,10 +142,24 @@ export function createMcpServer(deps: ServerDeps): McpServer {
       description:
         'Returns per-partition lag (high watermark minus committed offset) for one consumer group. ' +
         'With topic, returns one row per partition; without topic, one summary row per committed topic. ' +
-        'Lag null means unknown (never zero-filled); totals sum known partitions only. Read-only.',
+        'Lag null means unknown (never zero-filled); totals sum known partitions only. ' +
+        'Observations are also persisted to lag history when PostgreSQL is available. Read-only.',
       inputSchema: getConsumerLagShape,
     },
     createGetConsumerLagHandler(deps.offsetsService, deps.logger),
+  );
+
+  server.registerTool(
+    'get_lag_history',
+    {
+      title: 'Get lag history',
+      description:
+        'Returns recorded lag observations for one consumer group and topic, newest first. ' +
+        'Observations are persisted best-effort by get_consumer_lag; a null lag means unknown at that time. ' +
+        'Errors with STORE_UNAVAILABLE when PostgreSQL is unreachable. Read-only.',
+      inputSchema: getLagHistoryShape,
+    },
+    createGetLagHistoryHandler(deps.lagStore, deps.logger),
   );
 
   return server;

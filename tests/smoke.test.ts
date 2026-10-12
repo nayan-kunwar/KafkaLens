@@ -1,9 +1,11 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Kafka } from 'kafkajs';
+import { Pool } from 'pg';
 import { pino } from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { LagStore } from '../src/persistence/lag-store.js';
 import { createMcpServer, SERVER_INFO } from '../src/server/mcp-server.js';
 import { AdminService } from '../src/services/admin-service.js';
 import { ConsumerGroupsService } from '../src/services/consumer-groups-service.js';
@@ -17,6 +19,8 @@ describe('smoke', () => {
     adminService: new AdminService(kafka),
     consumerGroupsService,
     offsetsService: new OffsetsService(kafka, consumerGroupsService),
+    // Never queried here; the pool stays idle without opening connections.
+    lagStore: new LagStore(new Pool({ connectionString: 'postgresql://localhost:1/unused' })),
     logger,
   });
   const client = new Client({ name: 'kafka-lens-test', version: '0.0.0' });
@@ -49,6 +53,7 @@ describe('smoke', () => {
         'get_consumer_group',
         'get_consumer_assignments',
         'get_consumer_lag',
+        'get_lag_history',
       ]),
     );
   });

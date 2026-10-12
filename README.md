@@ -6,7 +6,7 @@
 
 ## Status
 
-Milestone **M4 — consumer lag** (read-only; PLAINTEXT and SASL/SSL supported).
+Milestone **M5 — lag history** (read-only; PLAINTEXT and SASL/SSL supported).
 
 New to MCP? Hands-on, spec-grounded learning notes from building this server live in [docs/mcp/](docs/mcp/) — error handling, the stdio transport, and the MCP Inspector workflow.
 
@@ -106,3 +106,6 @@ Available tools:
 - `get_consumer_group` — state, protocol, and members for one group; NOT_FOUND when unknown
 - `get_consumer_assignments` — decoded topic-partition assignments per member (null means unknown, not empty)
 - `get_consumer_lag` — per-partition lag for one group (per-partition rows with topic, per-topic summaries without); null lag means unknown, totals sum known partitions only
+- `get_lag_history` — recorded lag observations for one group and topic, newest first, with partition/since/limit filters
+
+Lag history is best-effort: `get_consumer_lag` persists observations when PostgreSQL is available, and the server starts without it. History reads report `STORE_UNAVAILABLE` while the database is unreachable.
