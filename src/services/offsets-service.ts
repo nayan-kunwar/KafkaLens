@@ -3,6 +3,7 @@ import type { Logger } from 'pino';
 
 import { calculatePartitionLag, sumLags, type LagUnknownReason } from '../domain/lag.js';
 import { AppError } from '../errors/app-error.js';
+import { noopMetrics, type Metrics } from '../observability/metrics.js';
 import type { LagObservationRow, LagStore } from '../persistence/lag-store.js';
 
 import type { ConsumerGroupsService } from './consumer-groups-service.js';
@@ -60,6 +61,7 @@ export class OffsetsService {
   private readonly consumerGroups: ConsumerGroupsService;
   private readonly lagStore: LagStore | undefined;
   private readonly logger: Logger | undefined;
+  private readonly metrics: Metrics;
   private clusterId: string | undefined;
 
   constructor(
@@ -67,14 +69,28 @@ export class OffsetsService {
     consumerGroups: ConsumerGroupsService,
     lagStore?: LagStore,
     logger?: Logger,
+    metrics?: Metrics,
   ) {
     this.kafka = kafka;
     this.consumerGroups = consumerGroups;
     this.lagStore = lagStore;
     this.logger = logger;
+    this.metrics = metrics ?? noopMetrics;
   }
 
   async getConsumerLag(groupId: string, topic?: string): Promise<TopicLagResult | GroupLagResult> {
+    const started = Date.now();
+    try {
+      return await this.loadConsumerLag(groupId, topic);
+    } finally {
+      this.metrics.kafkaRequest('consumer_lag', Date.now() - started);
+    }
+  }
+
+  private async loadConsumerLag(
+    groupId: string,
+    topic?: string,
+  ): Promise<TopicLagResult | GroupLagResult> {
     // Group existence first: unknown (Dead) groups fail with NOT_FOUND here,
     // and the observed state travels with every lag response as context.
     const group = await this.consumerGroups.getConsumerGroup(groupId);
@@ -128,6 +144,7 @@ export class OffsetsService {
         observedAt,
       }));
       await this.lagStore.recordBatch(records);
+      this.metrics.lagObservations(records.length);
     } catch (err) {
       // History is best-effort: a store failure must never fail the lag call.
       this.logger?.warn(

@@ -68,12 +68,14 @@ describe('lag store', () => {
     expect(history.truncated).toBe(false);
     expect(history.observations).toEqual([
       {
+        partition: 1,
         observedAt: '2026-01-02T00:00:00.000Z',
         highWatermark: '0',
         committedOffset: null,
         lag: null,
       },
       {
+        partition: 0,
         observedAt: '2026-01-01T00:00:00.000Z',
         highWatermark: '10',
         committedOffset: '4',

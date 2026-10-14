@@ -40,6 +40,10 @@ describe('loadEnv', () => {
     expect(env.LOG_LEVEL).toBe('info');
     expect(env.PARTITION_IMBALANCE_RATIO).toBe(5);
     expect(env.STALL_WINDOW_SECONDS).toBe(300);
+    expect(env.CACHE_TTL_SECONDS).toBe(15);
+    expect(env.METRICS_ENABLED).toBe(false);
+    expect(env.METRICS_PORT).toBe(9464);
+    expect(env.GITHUB_REPOSITORY).toBeUndefined();
     expect(env.KAFKA_SASL_MECHANISM).toBe('plain');
     expect(env.KAFKA_SSL_REJECT_UNAUTHORIZED).toBe(true);
     expect(env.KAFKA_REQUEST_TIMEOUT_MS).toBe(30_000);

@@ -5,6 +5,7 @@ export type ErrorCode =
   | 'KAFKA_ERROR'
   | 'NOT_FOUND'
   | 'STORE_UNAVAILABLE'
+  | 'SAFETY_REJECTED'
   | 'INTERNAL';
 
 export class AppError extends Error {

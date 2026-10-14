@@ -2,15 +2,17 @@ import { z } from 'zod';
 
 import { AppError } from '../errors/app-error.js';
 
-const boolFromEnv = z
-  .string()
-  .default('true')
-  .transform((value, ctx) => {
-    if (value === 'true') return true;
-    if (value === 'false') return false;
-    ctx.addIssue({ code: 'custom', message: 'must be "true" or "false"' });
-    return z.NEVER;
-  });
+function boolEnv(fallback: 'true' | 'false') {
+  return z
+    .string()
+    .default(fallback)
+    .transform((value, ctx) => {
+      if (value === 'true') return true;
+      if (value === 'false') return false;
+      ctx.addIssue({ code: 'custom', message: 'must be "true" or "false"' });
+      return z.NEVER;
+    });
+}
 
 const envSchema = z
   .object({
@@ -23,7 +25,7 @@ const envSchema = z
     KAFKA_SASL_MECHANISM: z.enum(['plain', 'scram-sha-256', 'scram-sha-512']).default('plain'),
     KAFKA_SASL_USERNAME: z.string().min(1).optional(),
     KAFKA_SASL_PASSWORD: z.string().min(1).optional(),
-    KAFKA_SSL_REJECT_UNAUTHORIZED: boolFromEnv,
+    KAFKA_SSL_REJECT_UNAUTHORIZED: boolEnv('true'),
     KAFKA_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
     KAFKA_CONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
     KAFKA_RETRY_ATTEMPTS: z.coerce.number().int().min(0).default(5),
@@ -35,6 +37,15 @@ const envSchema = z
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
     PARTITION_IMBALANCE_RATIO: z.coerce.number().positive().default(5),
     STALL_WINDOW_SECONDS: z.coerce.number().positive().default(300),
+    CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(15),
+    METRICS_ENABLED: boolEnv('false'),
+    METRICS_PORT: z.coerce.number().int().min(0).max(65535).default(9464),
+    GITHUB_REPOSITORY: z
+      .string()
+      .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/)
+      .optional(),
+    GITHUB_TOKEN: z.string().min(1).optional(),
+    DEPLOYMENT_SOURCE_URL: z.string().url().optional(),
   })
   .superRefine((env, ctx) => {
     if (!env.KAFKA_SECURITY_PROTOCOL.startsWith('SASL')) return;

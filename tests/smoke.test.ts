@@ -5,10 +5,13 @@ import { Pool } from 'pg';
 import { pino } from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import type { IncidentStore } from '../src/persistence/incident-store.js';
 import { LagStore } from '../src/persistence/lag-store.js';
+import { assertSafetyBoundary, READ_ONLY_TOOL_NAMES } from '../src/safety/readonly.js';
 import { createMcpServer, SERVER_INFO } from '../src/server/mcp-server.js';
 import { AdminService } from '../src/services/admin-service.js';
 import { ConsumerGroupsService } from '../src/services/consumer-groups-service.js';
+import type { DiagnosisService } from '../src/services/diagnosis-service.js';
 import { OffsetsService } from '../src/services/offsets-service.js';
 
 describe('smoke', () => {
@@ -21,6 +24,8 @@ describe('smoke', () => {
     offsetsService: new OffsetsService(kafka, consumerGroupsService),
     // Never queried here; the pool stays idle without opening connections.
     lagStore: new LagStore(new Pool({ connectionString: 'postgresql://localhost:1/unused' })),
+    diagnosisService: {} as DiagnosisService,
+    incidentStore: {} as IncidentStore,
     logger,
   });
   const client = new Client({ name: 'kafka-lens-test', version: '0.0.0' });
@@ -37,25 +42,40 @@ describe('smoke', () => {
 
   it('identifies itself as kafka-lens', () => {
     expect(SERVER_INFO.name).toBe('kafka-lens');
+    expect(SERVER_INFO.version).toBe('0.2.0');
   });
 
-  it('registers the expected tools', async () => {
+  it('registers the read-only tool allowlist', async () => {
+    assertSafetyBoundary();
     const { tools } = await client.listTools();
-    const names = tools.map((tool) => tool.name);
-    expect(names).toEqual(
-      expect.arrayContaining([
-        'health_check',
-        'get_cluster_info',
-        'list_topics',
-        'get_topic_metadata',
-        'get_partition_info',
-        'list_consumer_groups',
-        'get_consumer_group',
-        'get_consumer_assignments',
-        'get_consumer_lag',
-        'get_lag_history',
-      ]),
-    );
+    const names = tools.map((tool) => tool.name).sort();
+    expect(names).toEqual([...READ_ONLY_TOOL_NAMES].sort());
+    for (const tool of tools) {
+      expect(tool.annotations?.readOnlyHint).toBe(true);
+      expect(tool.annotations?.destructiveHint).toBe(false);
+    }
+  });
+
+  it('registers resources and prompts', async () => {
+    const { resources } = await client.listResources();
+    expect(resources.map((resource) => resource.uri).sort()).toEqual([
+      'kafka://consumer-groups',
+      'kafka://topics',
+    ]);
+    const { resourceTemplates } = await client.listResourceTemplates();
+    expect(resourceTemplates.map((template) => template.uriTemplate).sort()).toEqual([
+      'kafka://consumer-group/{group}',
+      'kafka://consumer-group/{group}/lag',
+      'kafka://incidents/{id}',
+      'kafka://topic/{topic}',
+    ]);
+    const { prompts } = await client.listPrompts();
+    expect(prompts.map((prompt) => prompt.name).sort()).toEqual([
+      'analyze_partition_imbalance',
+      'diagnose_kafka_lag',
+      'explain_consumer_group',
+      'investigate_consumer_group',
+    ]);
   });
 
   it('answers health_check without Kafka access', async () => {

@@ -44,6 +44,7 @@ export interface LagHistoryQuery {
 }
 
 export interface LagHistoryPoint {
+  partition: number;
   observedAt: string;
   highWatermark: string | null;
   committedOffset: string | null;
@@ -125,7 +126,7 @@ export class LagStore {
     }
     params.push(query.limit + 1);
     const sql =
-      'SELECT observed_at, high_watermark, committed_offset, lag FROM lag_observations ' +
+      'SELECT partition, observed_at, high_watermark, committed_offset, lag FROM lag_observations ' +
       `WHERE ${conditions.join(' AND ')} ` +
       `ORDER BY observed_at DESC, partition ASC LIMIT $${params.length}`;
     let result: { rows: Record<string, unknown>[] };
@@ -137,6 +138,7 @@ export class LagStore {
     const truncated = result.rows.length > query.limit;
     return {
       observations: result.rows.slice(0, query.limit).map((row) => ({
+        partition: Number(row.partition),
         observedAt: (row.observed_at as Date).toISOString(),
         highWatermark: row.high_watermark as string | null,
         committedOffset: row.committed_offset as string | null,

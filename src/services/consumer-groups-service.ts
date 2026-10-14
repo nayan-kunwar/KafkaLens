@@ -2,6 +2,7 @@ import type { Admin, GroupDescription, Kafka } from 'kafkajs';
 import kafkajs from 'kafkajs';
 
 import { AppError } from '../errors/app-error.js';
+import { noopMetrics, type Metrics } from '../observability/metrics.js';
 
 import { mapKafkaError } from './kafka-error.js';
 
@@ -60,9 +61,11 @@ export interface ConsumerAssignmentsResult {
 
 export class ConsumerGroupsService {
   private readonly kafka: Kafka;
+  private readonly metrics: Metrics;
 
-  constructor(kafka: Kafka) {
+  constructor(kafka: Kafka, options: { metrics?: Metrics | undefined } = {}) {
     this.kafka = kafka;
+    this.metrics = options.metrics ?? noopMetrics;
   }
 
   async listConsumerGroups(options: {
@@ -71,80 +74,95 @@ export class ConsumerGroupsService {
     limit: number;
   }): Promise<ConsumerGroupListResult> {
     const { groupIdContains, protocolType, limit } = options;
-    return this.withAdmin(async (admin) => {
-      const { groups } = await admin.listGroups();
-      const filtered = groups.filter(
-        (group) =>
-          (groupIdContains === undefined || group.groupId.includes(groupIdContains)) &&
-          (protocolType === undefined || group.protocolType === protocolType),
-      );
-      filtered.sort((a, b) => a.groupId.localeCompare(b.groupId));
-      const total = filtered.length;
-      const page = filtered.slice(0, limit);
-      if (page.length === 0) {
-        return { groups: [], total, truncated: false, observedAt: new Date().toISOString() };
-      }
-      // Option A: single batched describe for the page. A throw (e.g. a group
-      // deleted mid-list) fails the whole call via mapKafkaError — no per-row nulls.
-      const described = await admin.describeGroups(page.map((group) => group.groupId));
-      const byId = new Map(described.groups.map((group) => [group.groupId, group]));
-      return {
-        groups: page.map((overview) => {
-          const detail = byId.get(overview.groupId);
-          return {
-            groupId: overview.groupId,
-            protocolType: overview.protocolType,
-            state: detail?.state ?? 'Unknown',
-            memberCount: detail?.members.length ?? 0,
-          };
-        }),
-        total,
-        truncated: total > page.length,
-        observedAt: new Date().toISOString(),
-      };
-    });
+    return this.time('list_groups', () =>
+      this.withAdmin(async (admin) => {
+        const { groups } = await admin.listGroups();
+        const filtered = groups.filter(
+          (group) =>
+            (groupIdContains === undefined || group.groupId.includes(groupIdContains)) &&
+            (protocolType === undefined || group.protocolType === protocolType),
+        );
+        filtered.sort((a, b) => a.groupId.localeCompare(b.groupId));
+        const total = filtered.length;
+        const page = filtered.slice(0, limit);
+        if (page.length === 0) {
+          return { groups: [], total, truncated: false, observedAt: new Date().toISOString() };
+        }
+        // Option A: single batched describe for the page. A throw (e.g. a group
+        // deleted mid-list) fails the whole call via mapKafkaError — no per-row nulls.
+        const described = await admin.describeGroups(page.map((group) => group.groupId));
+        const byId = new Map(described.groups.map((group) => [group.groupId, group]));
+        return {
+          groups: page.map((overview) => {
+            const detail = byId.get(overview.groupId);
+            return {
+              groupId: overview.groupId,
+              protocolType: overview.protocolType,
+              state: detail?.state ?? 'Unknown',
+              memberCount: detail?.members.length ?? 0,
+            };
+          }),
+          total,
+          truncated: total > page.length,
+          observedAt: new Date().toISOString(),
+        };
+      }),
+    );
   }
 
   async getConsumerGroup(groupId: string): Promise<ConsumerGroupResult> {
-    return this.withAdmin(async (admin) => {
-      const described = await admin.describeGroups([groupId]);
-      const group = requireLiveGroup(described.groups, groupId);
-      const members = [...group.members].sort((a, b) => a.memberId.localeCompare(b.memberId));
-      const page = members.slice(0, MAX_MEMBER_ROWS);
-      return {
-        groupId: group.groupId,
-        state: group.state,
-        protocolType: group.protocolType,
-        protocol: group.protocol,
-        memberCount: members.length,
-        members: page.map((member) => ({
-          memberId: member.memberId,
-          clientId: member.clientId,
-          clientHost: member.clientHost,
-        })),
-        truncated: members.length > page.length,
-        observedAt: new Date().toISOString(),
-      };
-    });
+    return this.time('describe_group', () =>
+      this.withAdmin(async (admin) => {
+        const described = await admin.describeGroups([groupId]);
+        const group = requireLiveGroup(described.groups, groupId);
+        const members = [...group.members].sort((a, b) => a.memberId.localeCompare(b.memberId));
+        const page = members.slice(0, MAX_MEMBER_ROWS);
+        return {
+          groupId: group.groupId,
+          state: group.state,
+          protocolType: group.protocolType,
+          protocol: group.protocol,
+          memberCount: members.length,
+          members: page.map((member) => ({
+            memberId: member.memberId,
+            clientId: member.clientId,
+            clientHost: member.clientHost,
+          })),
+          truncated: members.length > page.length,
+          observedAt: new Date().toISOString(),
+        };
+      }),
+    );
   }
 
   async getConsumerAssignments(groupId: string): Promise<ConsumerAssignmentsResult> {
-    return this.withAdmin(async (admin) => {
-      const described = await admin.describeGroups([groupId]);
-      const group = requireLiveGroup(described.groups, groupId);
-      const members = [...group.members].sort((a, b) => a.memberId.localeCompare(b.memberId));
-      const page = members.slice(0, MAX_MEMBER_ROWS);
-      return {
-        groupId: group.groupId,
-        memberCount: members.length,
-        assignments: page.map((member) => ({
-          memberId: member.memberId,
-          assignment: decodeAssignment(member.memberAssignment),
-        })),
-        truncated: members.length > page.length,
-        observedAt: new Date().toISOString(),
-      };
-    });
+    return this.time('describe_assignments', () =>
+      this.withAdmin(async (admin) => {
+        const described = await admin.describeGroups([groupId]);
+        const group = requireLiveGroup(described.groups, groupId);
+        const members = [...group.members].sort((a, b) => a.memberId.localeCompare(b.memberId));
+        const page = members.slice(0, MAX_MEMBER_ROWS);
+        return {
+          groupId: group.groupId,
+          memberCount: members.length,
+          assignments: page.map((member) => ({
+            memberId: member.memberId,
+            assignment: decodeAssignment(member.memberAssignment),
+          })),
+          truncated: members.length > page.length,
+          observedAt: new Date().toISOString(),
+        };
+      }),
+    );
+  }
+
+  private async time<T>(operation: string, run: () => Promise<T>): Promise<T> {
+    const started = Date.now();
+    try {
+      return await run();
+    } finally {
+      this.metrics.kafkaRequest(operation, Date.now() - started);
+    }
   }
 
   private async withAdmin<T>(fn: (admin: Admin) => Promise<T>): Promise<T> {

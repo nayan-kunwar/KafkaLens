@@ -27,6 +27,7 @@ describe('get_lag_history handler', () => {
         return Promise.resolve({
           observations: [
             {
+              partition: 0,
               observedAt: '2026-01-02T00:00:00.000Z',
               highWatermark: '10',
               committedOffset: '4',

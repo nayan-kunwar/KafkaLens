@@ -1,6 +1,8 @@
 import type { Admin, Kafka } from 'kafkajs';
 
+import type { KeyValueCache } from '../cache/metadata-cache.js';
 import { AppError } from '../errors/app-error.js';
+import { noopMetrics, type Metrics } from '../observability/metrics.js';
 
 import { mapKafkaError } from './kafka-error.js';
 
@@ -66,24 +68,38 @@ export interface PartitionInfoResult {
   observedAt: string;
 }
 
+export interface AdminServiceOptions {
+  metrics?: Metrics | undefined;
+  cache?: KeyValueCache | undefined;
+  cacheTtlSeconds?: number | undefined;
+}
+
 export class AdminService {
   private readonly kafka: Kafka;
+  private readonly metrics: Metrics;
+  private readonly cache: KeyValueCache | undefined;
+  private readonly cacheTtlSeconds: number;
 
-  constructor(kafka: Kafka) {
+  constructor(kafka: Kafka, options: AdminServiceOptions = {}) {
     this.kafka = kafka;
+    this.metrics = options.metrics ?? noopMetrics;
+    this.cache = options.cache;
+    this.cacheTtlSeconds = options.cacheTtlSeconds ?? 15;
   }
 
   async getClusterInfo(): Promise<ClusterInfo> {
-    return this.withAdmin(async (admin) => {
-      const cluster = await admin.describeCluster();
-      return {
-        clusterId: cluster.clusterId,
-        controllerId: cluster.controller,
-        brokerCount: cluster.brokers.length,
-        brokers: cluster.brokers.map(({ nodeId, host, port }) => ({ nodeId, host, port })),
-        observedAt: new Date().toISOString(),
-      };
-    });
+    return this.cached('cluster-info', 'describe_cluster', () =>
+      this.withAdmin(async (admin) => {
+        const cluster = await admin.describeCluster();
+        return {
+          clusterId: cluster.clusterId,
+          controllerId: cluster.controller,
+          brokerCount: cluster.brokers.length,
+          brokers: cluster.brokers.map(({ nodeId, host, port }) => ({ nodeId, host, port })),
+          observedAt: new Date().toISOString(),
+        };
+      }),
+    );
   }
 
   async listTopics(options: {
@@ -91,81 +107,87 @@ export class AdminService {
     limit: number;
   }): Promise<TopicListResult> {
     const { nameContains, limit } = options;
-    return this.withAdmin(async (admin) => {
-      const names = await admin.listTopics();
-      const filtered =
-        nameContains === undefined ? names : names.filter((name) => name.includes(nameContains));
-      filtered.sort((a, b) => a.localeCompare(b));
-      const total = filtered.length;
-      const page = filtered.slice(0, limit);
-      return {
-        topics: page.map((name) => ({ name, internal: name.startsWith('__') })),
-        total,
-        truncated: total > page.length,
-        observedAt: new Date().toISOString(),
-      };
-    });
+    return this.time('list_topics', () =>
+      this.withAdmin(async (admin) => {
+        const names = await admin.listTopics();
+        const filtered =
+          nameContains === undefined ? names : names.filter((name) => name.includes(nameContains));
+        filtered.sort((a, b) => a.localeCompare(b));
+        const total = filtered.length;
+        const page = filtered.slice(0, limit);
+        return {
+          topics: page.map((name) => ({ name, internal: name.startsWith('__') })),
+          total,
+          truncated: total > page.length,
+          observedAt: new Date().toISOString(),
+        };
+      }),
+    );
   }
 
   async getTopicMetadata(topic: string): Promise<TopicMetadataResult> {
-    return this.withAdmin(async (admin) => {
-      const meta = await this.fetchMeta(admin, topic);
-      return {
-        name: meta.name,
-        partitionCount: meta.partitions.length,
-        partitions: meta.partitions
-          .map(toPartitionMeta)
-          .sort((a, b) => a.partitionId - b.partitionId),
-        observedAt: new Date().toISOString(),
-      };
-    });
+    return this.cached(`topic-metadata:${topic}`, 'topic_metadata', () =>
+      this.withAdmin(async (admin) => {
+        const meta = await this.fetchMeta(admin, topic);
+        return {
+          name: meta.name,
+          partitionCount: meta.partitions.length,
+          partitions: meta.partitions
+            .map(toPartitionMeta)
+            .sort((a, b) => a.partitionId - b.partitionId),
+          observedAt: new Date().toISOString(),
+        };
+      }),
+    );
   }
 
   async getPartitionInfo(topic: string, partition?: number): Promise<PartitionInfoResult> {
-    return this.withAdmin(async (admin) => {
-      const meta = await this.fetchMeta(admin, topic);
-      const offsets = await admin.fetchTopicOffsets(topic);
-      const offsetsByPartition = new Map(offsets.map((entry) => [entry.partition, entry]));
+    return this.time('partition_info', () =>
+      this.withAdmin(async (admin) => {
+        const meta = await this.fetchMeta(admin, topic);
+        const offsets = await admin.fetchTopicOffsets(topic);
+        const offsetsByPartition = new Map(offsets.map((entry) => [entry.partition, entry]));
 
-      const allRows: PartitionInfoRow[] = meta.partitions
-        .map(toPartitionMeta)
-        .map((part) => {
-          const offset = offsetsByPartition.get(part.partitionId);
+        const allRows: PartitionInfoRow[] = meta.partitions
+          .map(toPartitionMeta)
+          .map((part) => {
+            const offset = offsetsByPartition.get(part.partitionId);
+            return {
+              ...part,
+              highWatermark: offset === undefined ? null : offset.high,
+              lowWatermark: offset === undefined ? null : offset.low,
+            };
+          })
+          .sort((a, b) => a.partitionId - b.partitionId);
+
+        if (partition !== undefined) {
+          const match = allRows.find((row) => row.partitionId === partition);
+          if (match === undefined) {
+            throw new AppError(
+              'NOT_FOUND',
+              `Partition ${partition} does not exist on topic "${topic}"`,
+              { topic, partition, partitionCount: allRows.length },
+            );
+          }
           return {
-            ...part,
-            highWatermark: offset === undefined ? null : offset.high,
-            lowWatermark: offset === undefined ? null : offset.low,
+            topic,
+            partitionCount: allRows.length,
+            partitions: [match],
+            truncated: false,
+            observedAt: new Date().toISOString(),
           };
-        })
-        .sort((a, b) => a.partitionId - b.partitionId);
-
-      if (partition !== undefined) {
-        const match = allRows.find((row) => row.partitionId === partition);
-        if (match === undefined) {
-          throw new AppError(
-            'NOT_FOUND',
-            `Partition ${partition} does not exist on topic "${topic}"`,
-            { topic, partition, partitionCount: allRows.length },
-          );
         }
+
+        const page = allRows.slice(0, MAX_PARTITION_ROWS);
         return {
           topic,
           partitionCount: allRows.length,
-          partitions: [match],
-          truncated: false,
+          partitions: page,
+          truncated: allRows.length > page.length,
           observedAt: new Date().toISOString(),
         };
-      }
-
-      const page = allRows.slice(0, MAX_PARTITION_ROWS);
-      return {
-        topic,
-        partitionCount: allRows.length,
-        partitions: page,
-        truncated: allRows.length > page.length,
-        observedAt: new Date().toISOString(),
-      };
-    });
+      }),
+    );
   }
 
   private async fetchMeta(
@@ -190,6 +212,43 @@ export class AdminService {
       throw new AppError('NOT_FOUND', `Topic "${topic}" not found`, { topic });
     }
     return meta;
+  }
+
+  private async cached<T>(key: string, operation: string, load: () => Promise<T>): Promise<T> {
+    const hit = await this.readCache<T>(key);
+    if (hit !== null) return hit;
+    const value = await this.time(operation, load);
+    await this.writeCache(key, value);
+    return value;
+  }
+
+  private async readCache<T>(key: string): Promise<T | null> {
+    if (this.cache === undefined) return null;
+    try {
+      const raw = await this.cache.get(key);
+      if (raw === null) return null;
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
+  }
+
+  private async writeCache(key: string, value: unknown): Promise<void> {
+    if (this.cache === undefined) return;
+    try {
+      await this.cache.set(key, JSON.stringify(value), this.cacheTtlSeconds);
+    } catch {
+      return;
+    }
+  }
+
+  private async time<T>(operation: string, run: () => Promise<T>): Promise<T> {
+    const started = Date.now();
+    try {
+      return await run();
+    } finally {
+      this.metrics.kafkaRequest(operation, Date.now() - started);
+    }
   }
 
   private async withAdmin<T>(fn: (admin: Admin) => Promise<T>): Promise<T> {
