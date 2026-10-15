@@ -2,6 +2,8 @@ import { Pool } from 'pg';
 
 import { AppError } from '../errors/app-error.js';
 
+import { applyMigrations } from './migrate.js';
+
 /**
  * Canonical DDL for lag history. Mirrors
  * src/persistence/migrations/001-lag-observations.sql exactly; a unit test
@@ -68,13 +70,7 @@ export class LagStore {
   }
 
   async ensureSchema(): Promise<void> {
-    try {
-      await this.pool.query(LAG_OBSERVATIONS_DDL);
-    } catch {
-      throw new AppError('STORE_UNAVAILABLE', 'PostgreSQL schema setup failed', {
-        store: 'postgres',
-      });
-    }
+    await applyMigrations(this.pool);
   }
 
   async recordBatch(rows: LagObservationRow[]): Promise<void> {

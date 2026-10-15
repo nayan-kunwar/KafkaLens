@@ -13,6 +13,7 @@ interface RedisLike {
   quit(): Promise<unknown>;
   get(key: string): Promise<string | null>;
   set(key: string, value: string, options: { EX: number }): Promise<unknown>;
+  ping?(): Promise<string>;
   on(event: 'error', listener: (err: Error) => void): unknown;
 }
 
@@ -62,6 +63,18 @@ export class MetadataCache implements KeyValueCache {
       await this.client.set(KEY_PREFIX + key, value, { EX: ttlSeconds });
     } catch {
       return;
+    }
+  }
+
+  async status(): Promise<'ok' | 'unavailable'> {
+    if (this.client === null || !this.client.isOpen) return 'unavailable';
+    // Without ping there is no round-trip to verify: report unverified, not ok.
+    if (this.client.ping === undefined) return 'unavailable';
+    try {
+      await this.client.ping();
+      return 'ok';
+    } catch {
+      return 'unavailable';
     }
   }
 

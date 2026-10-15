@@ -14,6 +14,18 @@ function boolEnv(fallback: 'true' | 'false') {
     });
 }
 
+/**
+ * Non-negative integer that rejects empty strings. Plain `z.coerce.number`
+ * turns `''` into `0`, which would silently disable retention instead of
+ * failing fast, so blank input is mapped to NaN (always invalid) first.
+ */
+function nonNegativeIntEnv(fallback: number) {
+  return z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? Number.NaN : value),
+    z.coerce.number().int().min(0).default(fallback),
+  );
+}
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -46,6 +58,8 @@ const envSchema = z
       .optional(),
     GITHUB_TOKEN: z.string().min(1).optional(),
     DEPLOYMENT_SOURCE_URL: z.string().url().optional(),
+    LAG_RETENTION_DAYS: nonNegativeIntEnv(14),
+    INCIDENT_RETENTION_DAYS: nonNegativeIntEnv(90),
   })
   .superRefine((env, ctx) => {
     if (!env.KAFKA_SECURITY_PROTOCOL.startsWith('SASL')) return;

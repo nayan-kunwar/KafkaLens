@@ -44,6 +44,8 @@ describe('loadEnv', () => {
     expect(env.METRICS_ENABLED).toBe(false);
     expect(env.METRICS_PORT).toBe(9464);
     expect(env.GITHUB_REPOSITORY).toBeUndefined();
+    expect(env.LAG_RETENTION_DAYS).toBe(14);
+    expect(env.INCIDENT_RETENTION_DAYS).toBe(90);
     expect(env.KAFKA_SASL_MECHANISM).toBe('plain');
     expect(env.KAFKA_SSL_REJECT_UNAUTHORIZED).toBe(true);
     expect(env.KAFKA_REQUEST_TIMEOUT_MS).toBe(30_000);
@@ -64,6 +66,15 @@ describe('loadEnv', () => {
     const env = { ...validEnv, STALL_WINDOW_SECONDS: '0' };
     expect(() => loadEnv(env)).toThrow(AppError);
   });
+
+  it.each([['-1'], ['abc'], ['1.5'], ['']])(
+    'rejects invalid LAG_RETENTION_DAYS value %s',
+    (value) => {
+      const error = captureError({ ...validEnv, LAG_RETENTION_DAYS: value });
+      expect(error.code).toBe('CONFIG_INVALID');
+      expect(error.message).toContain('LAG_RETENTION_DAYS');
+    },
+  );
 
   it('rejects invalid enum values for security protocol', () => {
     const env = { ...validEnv, KAFKA_SECURITY_PROTOCOL: 'KERBEROS' };

@@ -1,10 +1,12 @@
 import type { Admin, GroupDescription, Kafka } from 'kafkajs';
 import kafkajs from 'kafkajs';
+import type { Logger } from 'pino';
 
 import { AppError } from '../errors/app-error.js';
 import { noopMetrics, type Metrics } from '../observability/metrics.js';
+import { logTiming } from '../observability/tool-call.js';
 
-import { mapKafkaError } from './kafka-error.js';
+import { KafkaAdminSession } from './kafka-admin-session.js';
 
 const { AssignerProtocol } = kafkajs;
 
@@ -60,12 +62,21 @@ export interface ConsumerAssignmentsResult {
 }
 
 export class ConsumerGroupsService {
-  private readonly kafka: Kafka;
+  private readonly session: KafkaAdminSession;
   private readonly metrics: Metrics;
+  private readonly logger: Logger | undefined;
 
-  constructor(kafka: Kafka, options: { metrics?: Metrics | undefined } = {}) {
-    this.kafka = kafka;
+  constructor(
+    kafka: Kafka,
+    options: {
+      metrics?: Metrics | undefined;
+      logger?: Logger | undefined;
+      session?: KafkaAdminSession | undefined;
+    } = {},
+  ) {
+    this.session = options.session ?? new KafkaAdminSession(kafka);
     this.metrics = options.metrics ?? noopMetrics;
+    this.logger = options.logger;
   }
 
   async listConsumerGroups(options: {
@@ -161,24 +172,14 @@ export class ConsumerGroupsService {
     try {
       return await run();
     } finally {
-      this.metrics.kafkaRequest(operation, Date.now() - started);
+      const durationMs = Date.now() - started;
+      this.metrics.kafkaRequest(operation, durationMs);
+      logTiming(this.logger, 'kafka request', { operation, durationMs });
     }
   }
 
-  private async withAdmin<T>(fn: (admin: Admin) => Promise<T>): Promise<T> {
-    const admin = this.kafka.admin();
-    let connected = false;
-    try {
-      await admin.connect();
-      connected = true;
-      return await fn(admin);
-    } catch (err) {
-      throw mapKafkaError(err);
-    } finally {
-      if (connected) {
-        await admin.disconnect().catch(() => undefined);
-      }
-    }
+  private withAdmin<T>(fn: (admin: Admin) => Promise<T>): Promise<T> {
+    return this.session.run(fn);
   }
 }
 

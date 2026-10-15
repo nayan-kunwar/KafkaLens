@@ -1,5 +1,7 @@
 import { pino, type Logger } from 'pino';
 
+import { toolCallBindings } from '../observability/tool-call.js';
+
 export function createLogger(level: string): Logger {
   // stdout carries the MCP protocol; logs must go to stderr.
   return pino(
@@ -7,6 +9,7 @@ export function createLogger(level: string): Logger {
       level,
       base: { service: 'kafka-lens' },
       timestamp: pino.stdTimeFunctions.isoTime,
+      mixin: toolCallBindings,
     },
     pino.destination(2),
   );

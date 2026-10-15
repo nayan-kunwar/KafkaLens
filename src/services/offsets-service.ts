@@ -4,9 +4,11 @@ import type { Logger } from 'pino';
 import { calculatePartitionLag, sumLags, type LagUnknownReason } from '../domain/lag.js';
 import { AppError } from '../errors/app-error.js';
 import { noopMetrics, type Metrics } from '../observability/metrics.js';
+import { logTiming } from '../observability/tool-call.js';
 import type { LagObservationRow, LagStore } from '../persistence/lag-store.js';
 
 import type { ConsumerGroupsService } from './consumer-groups-service.js';
+import { KafkaAdminSession } from './kafka-admin-session.js';
 import { mapKafkaError } from './kafka-error.js';
 
 const MAX_PARTITION_ROWS = 500;
@@ -57,7 +59,7 @@ export interface GroupLagResult {
 }
 
 export class OffsetsService {
-  private readonly kafka: Kafka;
+  private readonly session: KafkaAdminSession;
   private readonly consumerGroups: ConsumerGroupsService;
   private readonly lagStore: LagStore | undefined;
   private readonly logger: Logger | undefined;
@@ -70,8 +72,9 @@ export class OffsetsService {
     lagStore?: LagStore,
     logger?: Logger,
     metrics?: Metrics,
+    session?: KafkaAdminSession,
   ) {
-    this.kafka = kafka;
+    this.session = session ?? new KafkaAdminSession(kafka);
     this.consumerGroups = consumerGroups;
     this.lagStore = lagStore;
     this.logger = logger;
@@ -83,7 +86,9 @@ export class OffsetsService {
     try {
       return await this.loadConsumerLag(groupId, topic);
     } finally {
-      this.metrics.kafkaRequest('consumer_lag', Date.now() - started);
+      const durationMs = Date.now() - started;
+      this.metrics.kafkaRequest('consumer_lag', durationMs);
+      logTiming(this.logger, 'kafka request', { operation: 'consumer_lag', durationMs });
     }
   }
 
@@ -94,16 +99,20 @@ export class OffsetsService {
     // Group existence first: unknown (Dead) groups fail with NOT_FOUND here,
     // and the observed state travels with every lag response as context.
     const group = await this.consumerGroups.getConsumerGroup(groupId);
-    return this.withAdmin(async (admin) => {
-      if (topic !== undefined) {
-        const result = await this.topicLag(admin, groupId, group.state, topic);
-        await this.bestEffortRecord(admin, groupId, this.toTopicRows(result));
-        return result;
-      }
-      const { result, rows } = await this.groupLag(admin, groupId, group.state);
-      await this.bestEffortRecord(admin, groupId, rows);
-      return result;
-    });
+    let result: TopicLagResult | GroupLagResult;
+    let rows: { topic: string; row: PartitionLagRow }[];
+    if (topic !== undefined) {
+      result = await this.withAdmin((admin) => this.topicLag(admin, groupId, group.state, topic));
+      rows = this.toTopicRows(result);
+    } else {
+      const grouped = await this.withAdmin((admin) => this.groupLag(admin, groupId, group.state));
+      result = grouped.result;
+      rows = grouped.rows;
+    }
+    // Outside withAdmin on purpose: PostgreSQL latency must never hold the
+    // shared Kafka admin mutex and serialize every other Kafka call.
+    await this.recordHistory(groupId, rows);
+    return result;
   }
 
   private toTopicRows(result: TopicLagResult): { topic: string; row: PartitionLagRow }[] {
@@ -121,16 +130,17 @@ export class OffsetsService {
     ];
   }
 
-  private async bestEffortRecord(
-    admin: Admin,
+  private async recordHistory(
     groupId: string,
     rows: { topic: string; row: PartitionLagRow }[],
   ): Promise<void> {
     if (this.lagStore === undefined || rows.length === 0) return;
     try {
       if (this.clusterId === undefined) {
-        const cluster = await admin.describeCluster();
-        this.clusterId = cluster.clusterId;
+        this.clusterId = await this.withAdmin(async (admin) => {
+          const cluster = await admin.describeCluster();
+          return cluster.clusterId;
+        });
       }
       const observedAt = new Date().toISOString();
       const records: LagObservationRow[] = rows.map(({ topic, row }) => ({
@@ -341,19 +351,7 @@ export class OffsetsService {
     );
   }
 
-  private async withAdmin<T>(fn: (admin: Admin) => Promise<T>): Promise<T> {
-    const admin = this.kafka.admin();
-    let connected = false;
-    try {
-      await admin.connect();
-      connected = true;
-      return await fn(admin);
-    } catch (err) {
-      throw mapKafkaError(err);
-    } finally {
-      if (connected) {
-        await admin.disconnect().catch(() => undefined);
-      }
-    }
+  private withAdmin<T>(fn: (admin: Admin) => Promise<T>): Promise<T> {
+    return this.session.run(fn);
   }
 }

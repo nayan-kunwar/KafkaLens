@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Logger } from 'pino';
 
 import { noopMetrics, type Metrics } from '../observability/metrics.js';
+import { runToolCall } from '../observability/tool-call.js';
 import type { IncidentStore } from '../persistence/incident-store.js';
 import type { LagStore } from '../persistence/lag-store.js';
 import {
@@ -22,6 +23,7 @@ import type { AdminService } from '../services/admin-service.js';
 import type { ConsumerGroupsService } from '../services/consumer-groups-service.js';
 import type { DiagnosisService } from '../services/diagnosis-service.js';
 import type { OffsetsService } from '../services/offsets-service.js';
+import type { ReadinessService } from '../services/readiness-service.js';
 import { createGetClusterInfoHandler } from '../tools/cluster-info.js';
 import {
   createGetConsumerAssignmentsHandler,
@@ -38,6 +40,7 @@ import {
 } from '../tools/diagnosis.js';
 import { createGetLagHistoryHandler } from '../tools/history.js';
 import { createGetConsumerLagHandler } from '../tools/offsets.js';
+import { createGetReadinessHandler } from '../tools/readiness.js';
 import {
   createGetPartitionInfoHandler,
   createGetTopicMetadataHandler,
@@ -47,7 +50,7 @@ import {
 import { registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
 
-export const SERVER_INFO = { name: 'kafka-lens', version: '0.2.0' } as const;
+export const SERVER_INFO = { name: 'kafka-lens', version: '0.2.1' } as const;
 
 export interface ServerDeps {
   adminService: AdminService;
@@ -56,6 +59,7 @@ export interface ServerDeps {
   lagStore: LagStore;
   diagnosisService: DiagnosisService;
   incidentStore: IncidentStore;
+  readinessService: ReadinessService;
   logger: Logger;
   metrics?: Metrics | undefined;
 }
@@ -91,13 +95,27 @@ export function createMcpServer(deps: ServerDeps): McpServer {
       title: 'Health check',
       description: 'Returns server liveness. No Kafka access required.',
     },
-    () => {
-      const started = Date.now();
-      metrics.toolCall('health_check', Date.now() - started);
-      return Promise.resolve({
-        content: [{ type: 'text' as const, text: 'kafka-lens is running' }],
-      });
+    () =>
+      runToolCall((toolCallId) => {
+        const started = Date.now();
+        const durationMs = Date.now() - started;
+        metrics.toolCall('health_check', durationMs);
+        deps.logger.debug({ tool: 'health_check', toolCallId, durationMs }, 'tool completed');
+        return Promise.resolve({
+          content: [{ type: 'text' as const, text: 'kafka-lens is running' }],
+        });
+      }),
+  );
+
+  register(
+    'get_readiness',
+    {
+      title: 'Get readiness',
+      description:
+        'Reports Kafka, PostgreSQL, and Redis. A down dependency is a status in the report and does not fail this call. ' +
+        'health_check remains process liveness and does not contact dependencies. Read-only.',
     },
+    createGetReadinessHandler(deps.readinessService, deps.logger, metrics) as never,
   );
 
   register(

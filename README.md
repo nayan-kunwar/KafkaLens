@@ -6,9 +6,9 @@
 
 ## Status
 
-Version **0.2.0**. Milestones M0–M20 are implemented. The server is read-only. PLAINTEXT and SASL/SSL are supported.
+Version **0.2.1**. Milestones M0–M20 are implemented. The server is read-only. PLAINTEXT and SASL/SSL are supported.
 
-The investigation entry point is `diagnose_consumer_group`. How to read its output is in [docs/diagnosis.md](docs/diagnosis.md).
+The investigation entry point is `diagnose_consumer_group`. How to read its output is in [docs/diagnosis.md](docs/diagnosis.md). A captured run is in [docs/examples/partition-hotspot.md](docs/examples/partition-hotspot.md). ACLs, migrations, retention, and readiness are in [docs/operations.md](docs/operations.md).
 
 New to MCP? Hands-on notes from building this server live in [docs/mcp/](docs/mcp/).
 
@@ -22,6 +22,7 @@ New to MCP? Hands-on notes from building this server live in [docs/mcp/](docs/mc
 ```bash
 npm install
 cp .env.example .env
+npm run migrate
 ```
 
 `.env` is loaded automatically at startup from the project root (then the working directory). Real environment variables always take precedence over the file.
@@ -34,6 +35,8 @@ cp .env.example .env
 | `npm run build`                  | Compile TypeScript to `dist/`                       |
 | `npm run build:demo`             | Compile the demo scenarios                          |
 | `npm start`                      | Run compiled server                                 |
+| `npm run migrate`                | Apply SQL migrations (run before the server)        |
+| `npm run retain`                 | Delete lag and incident rows past the retention age |
 | `npm run typecheck`              | Type-check `src/`, `tests/`, `demo/`                |
 | `npm run lint`                   | ESLint (typed rules, import ordering)               |
 | `npm run format`                 | Prettier write                                      |
@@ -70,6 +73,8 @@ All configuration is environment-driven (see `.env.example`). A `.env` file in t
 | `LOG_LEVEL`                     | `info`                                            | Pino log level (stderr)                          |
 | `PARTITION_IMBALANCE_RATIO`     | `5`                                               | Max/min (or max/mean) lag outlier threshold      |
 | `STALL_WINDOW_SECONDS`          | `300`                                             | Progress and rate observation window             |
+| `LAG_RETENTION_DAYS`            | `14`                                              | `npm run retain` cutoff for lag rows. `0` skips  |
+| `INCIDENT_RETENTION_DAYS`       | `90`                                              | `npm run retain` cutoff for incidents. `0` skips |
 | `CACHE_TTL_SECONDS`             | `15`                                              | Redis TTL for cluster and topic metadata         |
 | `METRICS_ENABLED`               | `false`                                           | Expose Prometheus metrics                        |
 | `METRICS_PORT`                  | `9464`                                            | Metrics HTTP port (`GET /metrics`)               |
@@ -79,7 +84,9 @@ All configuration is environment-driven (see `.env.example`). A `.env` file in t
 
 Invalid configuration fails fast with a structured `CONFIG_INVALID` error that reports field names only — never values or credentials.
 
-PostgreSQL, Redis, GitHub, and the deployment feed are optional. The process starts without them. History, incidents, cache, and correlation then report that they are unavailable. Kafka reads still have to succeed.
+PostgreSQL, Redis, GitHub, and the deployment feed are optional. The process starts without them. History, incidents, cache, and correlation then report that they are unavailable. Kafka reads still have to succeed. Apply the schema with `npm run migrate` before expecting history to persist. The Kafka ACLs this client needs are Describe on the cluster and on topics, and Describe plus Read on consumer groups.
+
+`health_check` is process liveness. `get_readiness` reports Kafka, PostgreSQL, and Redis and still returns when one of them is down.
 
 ## Architecture
 
@@ -115,7 +122,8 @@ The `env` block is optional — a `.env` file next to the project works too.
 
 ### Tools
 
-- `health_check` — server liveness
+- `health_check` — server liveness. Does not contact dependencies
+- `get_readiness` — Kafka, PostgreSQL, and Redis. A down dependency is a status, not a failed call
 - `get_cluster_info` — cluster id, controller, and brokers
 - `list_topics`, `get_topic_metadata`, `get_partition_info`
 - `list_consumer_groups`, `get_consumer_group`, `get_consumer_assignments`
@@ -162,3 +170,5 @@ Set `METRICS_ENABLED=true`. `GET /metrics` exposes:
 - `kafka_request_duration_seconds`
 - `diagnosis_duration_seconds`
 - `lag_observations_total`
+
+Tool logs include a `toolCallId` for that call. Metric labels stay `tool`, `operation` (and bounded error `code`); `toolCallId` is logs-only.

@@ -12,20 +12,26 @@ import { createMcpServer, SERVER_INFO } from '../src/server/mcp-server.js';
 import { AdminService } from '../src/services/admin-service.js';
 import { ConsumerGroupsService } from '../src/services/consumer-groups-service.js';
 import type { DiagnosisService } from '../src/services/diagnosis-service.js';
+import { KafkaAdminSession } from '../src/services/kafka-admin-session.js';
 import { OffsetsService } from '../src/services/offsets-service.js';
+import { ReadinessService } from '../src/services/readiness-service.js';
 
 describe('smoke', () => {
   const logger = pino({ level: 'silent' });
   const kafka = {} as Kafka;
   const consumerGroupsService = new ConsumerGroupsService(kafka);
+  const pool = new Pool({ connectionString: 'postgresql://localhost:1/unused' });
   const server = createMcpServer({
     adminService: new AdminService(kafka),
     consumerGroupsService,
     offsetsService: new OffsetsService(kafka, consumerGroupsService),
     // Never queried here; the pool stays idle without opening connections.
-    lagStore: new LagStore(new Pool({ connectionString: 'postgresql://localhost:1/unused' })),
+    lagStore: new LagStore(pool),
     diagnosisService: {} as DiagnosisService,
     incidentStore: {} as IncidentStore,
+    readinessService: new ReadinessService(new KafkaAdminSession(kafka), pool, {
+      status: () => Promise.resolve('unavailable'),
+    }),
     logger,
   });
   const client = new Client({ name: 'kafka-lens-test', version: '0.0.0' });
@@ -42,7 +48,7 @@ describe('smoke', () => {
 
   it('identifies itself as kafka-lens', () => {
     expect(SERVER_INFO.name).toBe('kafka-lens');
-    expect(SERVER_INFO.version).toBe('0.2.0');
+    expect(SERVER_INFO.version).toBe('0.2.1');
   });
 
   it('registers the read-only tool allowlist', async () => {

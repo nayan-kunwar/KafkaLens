@@ -3,6 +3,8 @@ import type { Pool } from 'pg';
 import { scoreIncident } from '../domain/similarity.js';
 import { AppError } from '../errors/app-error.js';
 
+import { applyMigrations } from './migrate.js';
+
 /**
  * Canonical DDL for incident history. Mirrors
  * src/persistence/migrations/002-incidents.sql exactly; a unit test fails if
@@ -63,13 +65,7 @@ export class IncidentStore {
   constructor(private readonly pool: Pool) {}
 
   async ensureSchema(): Promise<void> {
-    try {
-      await this.pool.query(INCIDENTS_DDL);
-    } catch {
-      throw new AppError('STORE_UNAVAILABLE', 'PostgreSQL schema setup failed', {
-        store: 'postgres',
-      });
-    }
+    await applyMigrations(this.pool);
   }
 
   async record(

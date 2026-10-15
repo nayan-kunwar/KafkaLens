@@ -5,6 +5,7 @@ import type { Finding } from '../domain/findings.js';
 import type { OffsetSample, ProgressClass } from '../domain/stall.js';
 import { AppError } from '../errors/app-error.js';
 import { noopMetrics, type Metrics } from '../observability/metrics.js';
+import { logTiming } from '../observability/tool-call.js';
 import type { IncidentStore, SimilarIncident } from '../persistence/incident-store.js';
 import type { LagHistoryPoint, LagStore } from '../persistence/lag-store.js';
 
@@ -449,7 +450,9 @@ export class DiagnosisService {
     try {
       return await run();
     } finally {
-      this.metrics.diagnosis(operation, Date.now() - started);
+      const durationMs = Date.now() - started;
+      this.metrics.diagnosis(operation, durationMs);
+      logTiming(this.options.logger, 'diagnosis', { operation, durationMs });
     }
   }
 }

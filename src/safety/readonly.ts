@@ -2,6 +2,7 @@ import { AppError } from '../errors/app-error.js';
 
 export const READ_ONLY_TOOL_NAMES = [
   'health_check',
+  'get_readiness',
   'get_cluster_info',
   'list_topics',
   'get_topic_metadata',

@@ -14,8 +14,10 @@ import { AdminService } from './services/admin-service.js';
 import { ConsumerGroupsService } from './services/consumer-groups-service.js';
 import { CorrelationService } from './services/correlation-service.js';
 import { DiagnosisService } from './services/diagnosis-service.js';
+import { KafkaAdminSession } from './services/kafka-admin-session.js';
 import { createKafka } from './services/kafka-client.js';
 import { OffsetsService } from './services/offsets-service.js';
+import { ReadinessService } from './services/readiness-service.js';
 import { createLogger } from './utils/logger.js';
 
 async function main(): Promise<void> {
@@ -47,27 +49,23 @@ async function main(): Promise<void> {
   }
 
   const kafka = createKafka(env, logger);
+  const session = new KafkaAdminSession(kafka);
   const cache = await MetadataCache.connect(env.REDIS_URL, logger);
   const adminService = new AdminService(kafka, {
     metrics,
     cache,
     cacheTtlSeconds: env.CACHE_TTL_SECONDS,
+    logger,
+    session,
   });
-  const consumerGroupsService = new ConsumerGroupsService(kafka, { metrics });
-  const pool = new Pool({ connectionString: env.POSTGRES_URL });
+  const consumerGroupsService = new ConsumerGroupsService(kafka, { metrics, logger, session });
+  const pool = new Pool({
+    connectionString: env.POSTGRES_URL,
+    connectionTimeoutMillis: 5_000,
+  });
   const lagStore = new LagStore(pool);
   const incidentStore = new IncidentStore(pool);
-  // History and incidents are best-effort. The server still starts when
-  // PostgreSQL is unreachable; those reads then report STORE_UNAVAILABLE.
-  try {
-    await lagStore.ensureSchema();
-    await incidentStore.ensureSchema();
-  } catch (err) {
-    logger.warn(
-      { err: err instanceof Error ? err.message : String(err) },
-      'postgres unavailable, continuing without lag history and incidents',
-    );
-  }
+  logger.info('schema is applied by npm run migrate, not during server startup');
 
   const offsetsService = new OffsetsService(
     kafka,
@@ -75,6 +73,7 @@ async function main(): Promise<void> {
     lagStore,
     logger,
     metrics,
+    session,
   );
   const correlation = new CorrelationService({
     githubRepository: env.GITHUB_REPOSITORY,
@@ -96,6 +95,7 @@ async function main(): Promise<void> {
       logger,
     },
   );
+  const readinessService = new ReadinessService(session, pool, cache);
   const server = createMcpServer({
     adminService,
     consumerGroupsService,
@@ -103,6 +103,7 @@ async function main(): Promise<void> {
     lagStore,
     diagnosisService,
     incidentStore,
+    readinessService,
     logger,
     metrics,
   });
@@ -113,7 +114,7 @@ async function main(): Promise<void> {
           metricsServer?.close(() => resolve());
         })
       : Promise.resolve();
-    Promise.all([lagStore.close(), cache.close(), closeMetrics])
+    Promise.all([lagStore.close(), cache.close(), session.close(), closeMetrics])
       .catch(() => undefined)
       .finally(() => process.exit(0));
   };

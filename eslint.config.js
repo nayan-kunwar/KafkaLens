@@ -52,6 +52,10 @@ export default tseslint.config(
     },
   },
   {
+    files: ['scripts/**/*.js'],
+    ...tseslint.configs.disableTypeChecked,
+  },
+  {
     files: ['src/**/*.ts'],
     ignores: ['src/services/**'],
     rules: {
