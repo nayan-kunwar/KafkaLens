@@ -144,7 +144,7 @@ export function diagnose(snapshot: DiagnosisSnapshot): DiagnosisResult {
   );
 
   return {
-    status: overallStatus(ranked, positiveLag),
+    status: overallStatus(ranked),
     findings: ranked,
     evidence,
     likelyCauses,
@@ -164,11 +164,8 @@ export function diagnose(snapshot: DiagnosisSnapshot): DiagnosisResult {
   };
 }
 
-function overallStatus(findings: readonly Finding[], positiveLag: boolean): OverallStatus {
+function overallStatus(findings: readonly Finding[]): OverallStatus {
   if (findings.length === 0) return 'no_issue_detected';
-  if (findings.every((finding) => finding.type === 'UNKNOWN') && !positiveLag) {
-    return 'insufficient_evidence';
-  }
   if (findings.every((finding) => finding.type === 'UNKNOWN')) return 'insufficient_evidence';
   return 'attention';
 }
@@ -279,7 +276,7 @@ function hasUnclassifiedData(snapshot: DiagnosisSnapshot): boolean {
   return snapshot.partitions.some(
     (partition) =>
       partition.unknownReason === 'INVALID_OFFSET' ||
-      (partition.unknownReason === 'UNKNOWN_WATERMARK' && snapshot.memberCount > 0),
+      partition.unknownReason === 'UNKNOWN_WATERMARK',
   );
 }
 

@@ -33,8 +33,78 @@ export const FORBIDDEN_KAFKA_OPERATIONS = [
   'alter_config',
 ] as const;
 
+export type ToolCapability =
+  | 'process:health'
+  | 'kafka:metadata:read'
+  | 'kafka:offsets:read'
+  | 'kafka:groups:read'
+  | 'store:history:read'
+  | 'store:history:write'
+  | 'store:incidents:read'
+  | 'store:incidents:write'
+  | 'postgres:read'
+  | 'redis:read';
+
+/**
+ * Capability manifest for every exposed tool. Registration checks these names
+ * instead of trusting a tool name alone: a future tool that needs a Kafka
+ * capability other than `:read` cannot be registered.
+ */
+export const TOOL_CAPABILITIES: Record<ReadOnlyToolName, readonly ToolCapability[]> = {
+  health_check: ['process:health'],
+  get_readiness: ['process:health', 'kafka:metadata:read', 'postgres:read', 'redis:read'],
+  get_cluster_info: ['kafka:metadata:read'],
+  list_topics: ['kafka:metadata:read'],
+  get_topic_metadata: ['kafka:metadata:read'],
+  get_partition_info: ['kafka:metadata:read', 'kafka:offsets:read'],
+  list_consumer_groups: ['kafka:groups:read'],
+  get_consumer_group: ['kafka:groups:read'],
+  get_consumer_assignments: ['kafka:groups:read'],
+  get_consumer_lag: ['kafka:groups:read', 'kafka:offsets:read', 'store:history:write'],
+  get_lag_history: ['store:history:read'],
+  analyze_consumer_lag: [
+    'kafka:metadata:read',
+    'kafka:groups:read',
+    'kafka:offsets:read',
+    'store:history:read',
+    'store:history:write',
+  ],
+  analyze_partition_imbalance: [
+    'kafka:metadata:read',
+    'kafka:groups:read',
+    'kafka:offsets:read',
+    'store:history:read',
+  ],
+  analyze_throughput: [
+    'kafka:metadata:read',
+    'kafka:groups:read',
+    'kafka:offsets:read',
+    'store:history:read',
+  ],
+  detect_stalled_consumers: [
+    'kafka:metadata:read',
+    'kafka:groups:read',
+    'kafka:offsets:read',
+    'store:history:read',
+  ],
+  diagnose_consumer_group: [
+    'kafka:metadata:read',
+    'kafka:groups:read',
+    'kafka:offsets:read',
+    'store:history:read',
+    'store:history:write',
+    'store:incidents:read',
+    'store:incidents:write',
+  ],
+  find_similar_incidents: ['store:incidents:read'],
+};
+
 const ALLOWED = new Set<string>(READ_ONLY_TOOL_NAMES);
 const FORBIDDEN = new Set<string>(FORBIDDEN_KAFKA_OPERATIONS);
+
+function isKafkaRead(capability: ToolCapability): boolean {
+  return capability.startsWith('kafka:') && capability.endsWith(':read');
+}
 
 export function assertReadOnlyTool(name: string): asserts name is ReadOnlyToolName {
   if (FORBIDDEN.has(name) || !ALLOWED.has(name)) {
@@ -43,6 +113,21 @@ export function assertReadOnlyTool(name: string): asserts name is ReadOnlyToolNa
       `Refusing "${name}": kafka-lens only exposes read-only investigation tools.`,
       { operation: name },
     );
+  }
+  const capabilities = TOOL_CAPABILITIES[name as ReadOnlyToolName];
+  if (capabilities === undefined) {
+    throw new AppError('SAFETY_REJECTED', `Tool "${name}" has no declared capability set.`, {
+      operation: name,
+    });
+  }
+  for (const capability of capabilities) {
+    if (capability.startsWith('kafka:') && !isKafkaRead(capability)) {
+      throw new AppError(
+        'SAFETY_REJECTED',
+        `Refusing "${name}": it declares non-read Kafka capability "${capability}".`,
+        { operation: name, capability },
+      );
+    }
   }
 }
 
@@ -59,7 +144,7 @@ export function rejectKafkaMutation(operation: string): never {
   );
 }
 
-/** Fails startup if the allowlist contains a mutation or fails to reject one. */
+/** Fails startup if the allowlist or capability manifest admits a mutation. */
 export function assertSafetyBoundary(): void {
   for (const name of READ_ONLY_TOOL_NAMES) {
     assertReadOnlyTool(name);

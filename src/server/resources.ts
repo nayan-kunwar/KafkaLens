@@ -1,8 +1,11 @@
 import { ResourceTemplate, type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
+import type { z } from 'zod';
 
 import { AppError } from '../errors/app-error.js';
 import type { IncidentStore } from '../persistence/incident-store.js';
+import { groupIdSchema } from '../schemas/consumer-group.js';
+import { topicNameSchema } from '../schemas/topic.js';
 import type { AdminService } from '../services/admin-service.js';
 import type { ConsumerGroupsService } from '../services/consumer-groups-service.js';
 import type { OffsetsService } from '../services/offsets-service.js';
@@ -35,7 +38,9 @@ export function registerResources(server: McpServer, deps: ResourceDeps): void {
       mimeType: 'application/json',
     },
     (uri, variables) =>
-      jsonResource(uri, () => deps.adminService.getTopicMetadata(one(variables, 'topic'))),
+      jsonResource(uri, () =>
+        deps.adminService.getTopicMetadata(one(variables, 'topic', topicNameSchema)),
+      ),
   );
 
   server.registerResource(
@@ -58,7 +63,9 @@ export function registerResources(server: McpServer, deps: ResourceDeps): void {
       mimeType: 'application/json',
     },
     (uri, variables) =>
-      jsonResource(uri, () => deps.consumerGroupsService.getConsumerGroup(one(variables, 'group'))),
+      jsonResource(uri, () =>
+        deps.consumerGroupsService.getConsumerGroup(one(variables, 'group', groupIdSchema)),
+      ),
   );
 
   server.registerResource(
@@ -70,7 +77,9 @@ export function registerResources(server: McpServer, deps: ResourceDeps): void {
       mimeType: 'application/json',
     },
     (uri, variables) =>
-      jsonResource(uri, () => deps.offsetsService.getConsumerLag(one(variables, 'group'))),
+      jsonResource(uri, () =>
+        deps.offsetsService.getConsumerLag(one(variables, 'group', groupIdSchema)),
+      ),
   );
 
   server.registerResource(
@@ -81,7 +90,8 @@ export function registerResources(server: McpServer, deps: ResourceDeps): void {
       description: 'One stored diagnosis incident.',
       mimeType: 'application/json',
     },
-    (uri, variables) => jsonResource(uri, () => deps.incidentStore.getById(one(variables, 'id'))),
+    (uri, variables) =>
+      jsonResource(uri, () => deps.incidentStore.getById(one(variables, 'id', /^\d+$/))),
   );
 }
 
@@ -89,9 +99,7 @@ async function jsonResource(uri: URL, load: () => Promise<unknown>): Promise<Rea
   try {
     const data = await load();
     return {
-      contents: [
-        { uri: uri.href, mimeType: 'application/json', text: JSON.stringify(data, null, 2) },
-      ],
+      contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(data) }],
     };
   } catch (err) {
     const appError =
@@ -100,15 +108,30 @@ async function jsonResource(uri: URL, load: () => Promise<unknown>): Promise<Rea
   }
 }
 
-function one(variables: Record<string, string | string[]>, name: string): string {
+function one(
+  variables: Record<string, string | string[]>,
+  name: string,
+  validator?: z.ZodType<string> | RegExp,
+): string {
   const value = variables[name];
   const raw = Array.isArray(value) ? value[0] : value;
   if (raw === undefined || raw.length === 0) {
     throw new AppError('NOT_FOUND', `Resource is missing "${name}"`, { name });
   }
+  let decoded: string;
   try {
-    return decodeURIComponent(raw);
+    decoded = decodeURIComponent(raw);
   } catch {
     throw new AppError('NOT_FOUND', `Resource variable "${name}" is not valid`, { name });
   }
+  const valid =
+    validator === undefined
+      ? true
+      : validator instanceof RegExp
+        ? validator.test(decoded)
+        : validator.safeParse(decoded).success;
+  if (!valid) {
+    throw new AppError('NOT_FOUND', `Resource variable "${name}" is not valid`, { name });
+  }
+  return decoded;
 }

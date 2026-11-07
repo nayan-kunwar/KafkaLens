@@ -42,6 +42,7 @@ describe('loadEnv', () => {
     expect(env.STALL_WINDOW_SECONDS).toBe(300);
     expect(env.CACHE_TTL_SECONDS).toBe(15);
     expect(env.METRICS_ENABLED).toBe(false);
+    expect(env.METRICS_HOST).toBe('127.0.0.1');
     expect(env.METRICS_PORT).toBe(9464);
     expect(env.GITHUB_REPOSITORY).toBeUndefined();
     expect(env.LAG_RETENTION_DAYS).toBe(14);
@@ -51,6 +52,38 @@ describe('loadEnv', () => {
     expect(env.KAFKA_REQUEST_TIMEOUT_MS).toBe(30_000);
     expect(env.KAFKA_CONNECTION_TIMEOUT_MS).toBe(10_000);
     expect(env.KAFKA_RETRY_ATTEMPTS).toBe(5);
+    expect(env.POSTGRES_CONNECTION_TIMEOUT_MS).toBe(5_000);
+    expect(env.POSTGRES_STATEMENT_TIMEOUT_MS).toBe(10_000);
+    expect(env.POSTGRES_QUERY_TIMEOUT_MS).toBe(15_000);
+    expect(env.TOOL_TIMEOUT_MS).toBe(60_000);
+  });
+
+  it.each([
+    ['STALL_WINDOW_SECONDS', 'Infinity'],
+    ['PARTITION_IMBALANCE_RATIO', '1e309'],
+    ['TOOL_TIMEOUT_MS', '999999999'],
+    ['POSTGRES_QUERY_TIMEOUT_MS', '0'],
+  ])('rejects non-finite or extreme numeric value %s=%s', (name, value) => {
+    const error = captureError({ ...validEnv, [name]: value });
+    expect(error.code).toBe('CONFIG_INVALID');
+    expect(error.message).toContain(name);
+  });
+
+  it('rejects development connection defaults in production', () => {
+    const error = captureError({ NODE_ENV: 'production' });
+    expect(error.code).toBe('CONFIG_INVALID');
+    expect(error.message).toContain('KAFKA_BROKERS');
+    expect(error.message).toContain('POSTGRES_URL');
+  });
+
+  it('accepts explicit production endpoints', () => {
+    const env = loadEnv({
+      NODE_ENV: 'production',
+      KAFKA_BROKERS: 'kafka:9094',
+      POSTGRES_URL: 'postgresql://user:pass@postgres:5432/kafka_inspector',
+    });
+    expect(env.NODE_ENV).toBe('production');
+    expect(env.KAFKA_BROKERS).toBe('kafka:9094');
   });
 
   it('throws a structured AppError on invalid values without leaking secrets', () => {

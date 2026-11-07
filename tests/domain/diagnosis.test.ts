@@ -167,6 +167,45 @@ describe('diagnose', () => {
     expect(result.evidence.some((statement) => statement.text.includes('withheld'))).toBe(true);
   });
 
+  it('returns insufficient evidence when every watermark is unknown and nobody is joined', () => {
+    const result = diagnose(
+      snapshot({
+        memberCount: 0,
+        partitions: [
+          row({
+            highWatermark: null,
+            committedOffset: null,
+            lag: null,
+            unknownReason: 'UNKNOWN_WATERMARK',
+            assigned: false,
+          }),
+        ],
+      }),
+    );
+    expect(result.status).toBe('insufficient_evidence');
+    expect(result.findings.map((finding) => finding.type)).toEqual(['UNKNOWN']);
+    expect(result.impact.unknownPartitionCount).toBe(1);
+  });
+
+  it('returns insufficient evidence for an INVALID_OFFSET without a known lag', () => {
+    const result = diagnose(
+      snapshot({
+        memberCount: 0,
+        partitions: [
+          row({
+            highWatermark: '10',
+            committedOffset: 'not-a-number',
+            lag: null,
+            unknownReason: 'INVALID_OFFSET',
+            assigned: false,
+          }),
+        ],
+      }),
+    );
+    expect(result.status).toBe('insufficient_evidence');
+    expect(result.findings.map((finding) => finding.type)).toEqual(['UNKNOWN']);
+  });
+
   it('returns UNKNOWN when lag is positive and history cannot classify it', () => {
     const result = diagnose(
       snapshot({

@@ -13,6 +13,7 @@ import { mapKafkaError } from './kafka-error.js';
 
 const MAX_PARTITION_ROWS = 500;
 const MAX_TOPIC_ROWS = 100;
+const GROUP_TOPIC_CONCURRENCY = 8;
 
 export interface PartitionLagRow {
   partitionId: number;
@@ -72,6 +73,7 @@ export class OffsetsService {
   private readonly logger: Logger | undefined;
   private readonly metrics: Metrics;
   private clusterId: string | undefined;
+  private readonly pendingHistory = new Set<Promise<void>>();
 
   constructor(
     kafka: Kafka,
@@ -85,10 +87,14 @@ export class OffsetsService {
     this.metrics = options.metrics ?? noopMetrics;
   }
 
-  async getConsumerLag(groupId: string, topic?: string): Promise<TopicLagResult | GroupLagResult> {
+  async getConsumerLag(
+    groupId: string,
+    topic?: string,
+    knownGroupState?: string,
+  ): Promise<TopicLagResult | GroupLagResult> {
     const started = Date.now();
     try {
-      return await this.loadConsumerLag(groupId, topic);
+      return await this.loadConsumerLag(groupId, topic, knownGroupState);
     } finally {
       const durationMs = Date.now() - started;
       this.metrics.kafkaRequest('consumer_lag', durationMs);
@@ -99,39 +105,49 @@ export class OffsetsService {
   private async loadConsumerLag(
     groupId: string,
     topic?: string,
+    knownGroupState?: string,
   ): Promise<TopicLagResult | GroupLagResult> {
-    // Group existence first: unknown (Dead) groups fail with NOT_FOUND here,
-    // and the observed state travels with every lag response as context.
-    const group = await this.consumerGroups.getConsumerGroup(groupId);
+    // Callers that already described the group (diagnosis) pass its state so
+    // this path does not repeat the broker call.
+    const groupState =
+      knownGroupState ?? (await this.consumerGroups.getConsumerGroup(groupId)).state;
     let result: TopicLagResult | GroupLagResult;
     let rows: { topic: string; row: PartitionLagRow }[];
     if (topic !== undefined) {
-      result = await this.withAdmin((admin) => this.topicLag(admin, groupId, group.state, topic));
-      rows = this.toTopicRows(result);
+      const topicResult = await this.withAdmin((admin) =>
+        this.topicLag(admin, groupId, groupState, topic),
+      );
+      result = topicResult.result;
+      rows = topicResult.rows;
     } else {
-      const grouped = await this.withAdmin((admin) => this.groupLag(admin, groupId, group.state));
+      const grouped = await this.withAdmin((admin) => this.groupLag(admin, groupId, groupState));
       result = grouped.result;
       rows = grouped.rows;
     }
-    // Outside withAdmin on purpose: PostgreSQL latency must never hold the
-    // shared Kafka admin mutex and serialize every other Kafka call.
-    await this.recordHistory(groupId, rows);
+    // History is best-effort and is not on the response path: recording may
+    // take a PostgreSQL round trip and must not delay a live lag read.
+    this.trackHistory(groupId, rows);
     return result;
   }
 
-  private toTopicRows(result: TopicLagResult): { topic: string; row: PartitionLagRow }[] {
-    return [
-      ...result.partitions.map((row) => ({ topic: result.topic, row })),
-      ...result.orphanedCommits.map((orphan) => ({
-        topic: result.topic,
-        row: {
-          partitionId: orphan.partition,
-          highWatermark: null,
-          committedOffset: orphan.committedOffset,
-          ...calculatePartitionLag(null, orphan.committedOffset),
-        } satisfies PartitionLagRow,
-      })),
-    ];
+  /**
+   * Waits for background history writes. Diagnosis calls this before reading
+   * history so its own sample is visible, and shutdown calls it before the
+   * PostgreSQL pool closes.
+   */
+  async flushHistory(): Promise<void> {
+    while (this.pendingHistory.size > 0) {
+      await Promise.allSettled([...this.pendingHistory]);
+    }
+  }
+
+  private trackHistory(groupId: string, rows: { topic: string; row: PartitionLagRow }[]): void {
+    const write = this.recordHistory(groupId, rows);
+    this.pendingHistory.add(write);
+    void write.then(
+      () => this.pendingHistory.delete(write),
+      () => this.pendingHistory.delete(write),
+    );
   }
 
   private async recordHistory(
@@ -173,7 +189,10 @@ export class OffsetsService {
     groupId: string,
     groupState: string,
     topic: string,
-  ): Promise<TopicLagResult> {
+  ): Promise<{
+    result: TopicLagResult;
+    rows: { topic: string; row: PartitionLagRow }[];
+  }> {
     const partitionIds = await this.fetchPartitionIds(admin, topic);
     const watermarks = await admin.fetchTopicOffsets(topic);
     const highByPartition = new Map(watermarks.map((entry) => [entry.partition, entry.high]));
@@ -197,16 +216,32 @@ export class OffsetsService {
     const { total, unknownCount } = sumLags(allRows.map((row) => row.lag));
     const page = allRows.slice(0, MAX_PARTITION_ROWS);
     return {
-      groupId,
-      topic,
-      groupState,
-      partitionCount: allRows.length,
-      partitions: page,
-      totalLag: total,
-      unknownPartitionCount: unknownCount,
-      orphanedCommits,
-      truncated: allRows.length > page.length,
-      observedAt: new Date().toISOString(),
+      result: {
+        groupId,
+        topic,
+        groupState,
+        partitionCount: allRows.length,
+        partitions: page,
+        totalLag: total,
+        unknownPartitionCount: unknownCount,
+        orphanedCommits,
+        truncated: allRows.length > page.length,
+        observedAt: new Date().toISOString(),
+      },
+      // Persist every partition, not only the response page, so a topic with
+      // more than 500 partitions keeps complete history.
+      rows: [
+        ...allRows.map((row) => ({ topic, row })),
+        ...orphanedCommits.map((orphan) => ({
+          topic,
+          row: {
+            partitionId: orphan.partition,
+            highWatermark: null,
+            committedOffset: orphan.committedOffset,
+            ...calculatePartitionLag(null, orphan.committedOffset),
+          } satisfies PartitionLagRow,
+        })),
+      ],
     };
   }
 
@@ -221,19 +256,14 @@ export class OffsetsService {
     const page = topics.slice(0, MAX_TOPIC_ROWS);
     const observedAt = new Date().toISOString();
 
-    const summaries: TopicLagSummary[] = [];
-    const rows: { topic: string; row: PartitionLagRow }[] = [];
-    for (const topic of page) {
-      const { summary, topicRows } = await this.summarizeTopic(
-        admin,
-        topic,
-        commits.get(topic) ?? [],
-      );
-      summaries.push(summary);
-      for (const row of topicRows) {
-        rows.push({ topic, row });
-      }
-    }
+    const summarized = await mapWithConcurrency(page, GROUP_TOPIC_CONCURRENCY, (topic) =>
+      this.summarizeTopic(admin, topic, commits.get(topic) ?? []),
+    );
+    const summaries = summarized.map((entry) => entry.summary);
+    const rows = summarized.flatMap((entry, index) => {
+      const topic = page[index];
+      return topic === undefined ? [] : entry.topicRows.map((row) => ({ topic, row }));
+    });
     return {
       result: {
         groupId,
@@ -358,4 +388,30 @@ export class OffsetsService {
   private withAdmin<T>(fn: (admin: Admin) => Promise<T>): Promise<T> {
     return this.session.run(fn);
   }
+}
+
+/**
+ * Runs an async mapper with bounded parallelism. A group-wide lag read may
+ * cover up to 100 topics; issuing those watermark calls sequentially made the
+ * response wait for each topic in turn.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  run: (item: T) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      const item = items[index];
+      if (item === undefined) return;
+      results[index] = await run(item);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }

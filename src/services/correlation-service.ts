@@ -1,4 +1,3 @@
-import type { Logger } from 'pino';
 import { z } from 'zod';
 
 export interface CorrelationEvent {
@@ -7,6 +6,8 @@ export interface CorrelationEvent {
   title: string;
   occurredAt: string;
   url?: string;
+  /** External text is data, not instructions for the model to follow. */
+  untrusted: true;
 }
 
 export interface CorrelationResult {
@@ -20,7 +21,6 @@ export interface CorrelationOptions {
   githubToken?: string | undefined;
   deploymentSourceUrl?: string | undefined;
   fetchImpl?: typeof fetch | undefined;
-  logger?: Logger | undefined;
 }
 
 const commitListSchema = z
@@ -66,7 +66,9 @@ const deploymentFeedSchema = z
   .max(50);
 
 const MAX_EVENTS = 20;
-const MAX_BODY = 1_000_000;
+const MAX_BODY_BYTES = 1_000_000;
+const MAX_TITLE = 200;
+const MAX_URL = 2_000;
 
 /**
  * Read-only correlation against GitHub and an optional deployment feed.
@@ -141,11 +143,13 @@ export class CorrelationService {
       const title = commit.commit.message.split('\n')[0] ?? commit.sha;
       const event: CorrelationEvent = {
         source: 'github',
-        id: commit.sha.slice(0, 12),
-        title: title.slice(0, 200),
+        id: safeExternalText(commit.sha.slice(0, 12), 120),
+        title: safeExternalText(title, MAX_TITLE),
         occurredAt: commit.commit.author?.date ?? window.until,
+        untrusted: true,
       };
-      if (commit.html_url !== undefined) event.url = commit.html_url;
+      const url = safeExternalUrl(commit.html_url);
+      if (url !== undefined) event.url = url;
       return event;
     });
 
@@ -160,8 +164,9 @@ export class CorrelationService {
       events.push({
         source: 'github',
         id: `deployment-${deployment.id}`,
-        title: title.slice(0, 200),
+        title: safeExternalText(title, MAX_TITLE),
         occurredAt: deployment.created_at,
+        untrusted: true,
       });
     }
     return events;
@@ -180,11 +185,13 @@ export class CorrelationService {
     return payload.map((deployment) => {
       const event: CorrelationEvent = {
         source: 'deployment',
-        id: String(deployment.id),
-        title: `${deployment.service} ${deployment.version}`.slice(0, 200),
+        id: safeExternalText(String(deployment.id), 120),
+        title: safeExternalText(`${deployment.service} ${deployment.version}`, MAX_TITLE),
         occurredAt: deployment.deployedAt,
+        untrusted: true,
       };
-      if (deployment.url !== undefined) event.url = deployment.url;
+      const url = safeExternalUrl(deployment.url);
+      if (url !== undefined) event.url = url;
       return event;
     });
   }
@@ -201,15 +208,24 @@ export class CorrelationService {
   }
 
   private async fetchJson(url: URL, headers: Record<string, string>): Promise<unknown> {
+    assertSafeExternalUrl(url);
     const fetchImpl = this.options.fetchImpl ?? fetch;
-    const response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(5000) });
-    const text = await response.text();
-    if (text.length > MAX_BODY) {
-      throw new Error('correlation payload exceeded 1000000 bytes');
+    const response = await fetchImpl(url, {
+      headers,
+      signal: AbortSignal.timeout(5000),
+      redirect: 'manual',
+    });
+    if (response.status >= 300 && response.status < 400) {
+      throw new Error(`redirect blocked (HTTP ${response.status})`);
     }
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
+    const declared = Number(response.headers.get('content-length') ?? '0');
+    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+      throw new Error(`correlation payload exceeded ${MAX_BODY_BYTES} bytes`);
+    }
+    const text = await readBodyCapped(response, MAX_BODY_BYTES);
     return JSON.parse(text) as unknown;
   }
 
@@ -233,4 +249,68 @@ function inWindow(occurredAt: string, window: { since: string; until: string }):
   const at = Date.parse(occurredAt);
   if (!Number.isFinite(at)) return false;
   return at >= Date.parse(window.since) && at <= Date.parse(window.until) + 1000;
+}
+
+/** Reads at most `maxBytes` without buffering an arbitrarily large body. */
+async function readBodyCapped(response: Response, maxBytes: number): Promise<string> {
+  const body = response.body;
+  if (body === null) return '';
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = '';
+  try {
+    for (;;) {
+      const next = (await reader.read()) as { done: boolean; value?: Uint8Array };
+      if (next.done) break;
+      const value = next.value;
+      if (value === undefined) continue;
+      bytes += value.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error(`correlation payload exceeded ${maxBytes} bytes`);
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function assertSafeExternalUrl(url: URL): void {
+  if (url.username !== '' || url.password !== '') {
+    throw new Error('correlation URL must not contain credentials');
+  }
+  if (url.protocol === 'https:') return;
+  if (url.protocol === 'http:' && isLoopbackHost(url.hostname)) return;
+  throw new Error('correlation URL must use https; http is allowed only for loopback hosts');
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+}
+
+function safeExternalText(value: string, max: number): string {
+  return (
+    value
+      // eslint-disable-next-line no-control-regex -- control and bidi characters are removed on purpose
+      .replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, max)
+  );
+}
+
+function safeExternalUrl(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+    return url.toString().slice(0, MAX_URL);
+  } catch {
+    return undefined;
+  }
 }

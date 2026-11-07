@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 
 import { scoreIncident } from '../domain/similarity.js';
 import { AppError } from '../errors/app-error.js';
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS incidents (
 CREATE INDEX IF NOT EXISTS incidents_topic_group_time
   ON incidents (topic, consumer_group, observed_at);`;
 
-const CANDIDATE_LIMIT = 200;
+const CANDIDATE_LIMIT = 1000;
 
 export interface NewIncident {
   clusterId: string;
@@ -55,6 +55,7 @@ export interface SimilarIncident extends IncidentRecord {
 }
 
 export interface SimilarIncidentQuery {
+  clusterId?: string | undefined;
   groupId: string;
   topic: string;
   findingTypes: readonly string[];
@@ -76,14 +77,38 @@ export class IncidentStore {
     const since = new Date(
       Date.parse(incident.observedAt) - dedupeWithinSeconds * 1000,
     ).toISOString();
+    // Advisory lock keyed by the dedupe identity. Concurrent diagnoses of the
+    // same group/topic cannot both pass the SELECT and insert duplicates.
+    const lockKey = [
+      'incident',
+      incident.clusterId,
+      incident.topic,
+      incident.consumerGroup,
+      incident.severity,
+      findingTypes.join(','),
+    ].join(':');
+    let client: PoolClient | undefined;
     try {
-      const existing = await this.pool.query(
-        'SELECT id FROM incidents WHERE topic = $1 AND consumer_group = $2 AND severity = $3 ' +
-          'AND finding_types = $4::text[] AND observed_at >= $5::timestamptz LIMIT 1',
-        [incident.topic, incident.consumerGroup, incident.severity, findingTypes, since],
+      client = await this.pool.connect();
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [lockKey]);
+      const existing = await client.query(
+        'SELECT id FROM incidents WHERE cluster_id = $1 AND topic = $2 AND consumer_group = $3 ' +
+          'AND severity = $4 AND finding_types = $5::text[] AND observed_at >= $6::timestamptz LIMIT 1',
+        [
+          incident.clusterId,
+          incident.topic,
+          incident.consumerGroup,
+          incident.severity,
+          findingTypes,
+          since,
+        ],
       );
-      if (existing.rows.length > 0) return 'duplicate';
-      await this.pool.query(
+      if (existing.rows.length > 0) {
+        await client.query('COMMIT');
+        return 'duplicate';
+      }
+      await client.query(
         'INSERT INTO incidents (cluster_id, topic, consumer_group, finding_types, severity, summary, evidence, observed_at) ' +
           'VALUES ($1, $2, $3, $4::text[], $5, $6, $7::jsonb, $8::timestamptz)',
         [
@@ -97,26 +122,44 @@ export class IncidentStore {
           incident.observedAt,
         ],
       );
+      await client.query('COMMIT');
       return 'stored';
     } catch (err) {
       if (err instanceof AppError) throw err;
+      await client?.query('ROLLBACK').catch(() => undefined);
       throw new AppError('STORE_UNAVAILABLE', 'PostgreSQL write failed', { store: 'postgres' });
+    } finally {
+      client?.release();
     }
   }
 
   async findSimilar(query: SimilarIncidentQuery): Promise<SimilarIncident[]> {
-    const params: unknown[] = [query.topic, query.groupId];
-    let overlap = '';
+    const params: unknown[] = [];
+    const conditions: string[] = [];
+    if (query.clusterId !== undefined) {
+      params.push(query.clusterId);
+      conditions.push(`cluster_id = $${params.length}`);
+    }
+    params.push(query.topic);
+    const topicParam = `$${params.length}`;
+    params.push(query.groupId);
+    const groupParam = `$${params.length}`;
+    let overlap = 'false';
+    let overlapScore = '';
     if (query.findingTypes.length > 0) {
       params.push([...query.findingTypes]);
-      overlap = ` OR finding_types && $${params.length}::text[]`;
+      overlap = `finding_types && $${params.length}::text[]`;
+      overlapScore = ` + (finding_types && $${params.length}::text[])::int`;
     }
+    conditions.push(`(topic = ${topicParam} OR consumer_group = ${groupParam} OR ${overlap})`);
+    // Rank the bounded candidate window by exact group/topic/type overlap
+    // before applying the deterministic JS score below.
+    const relevance = `((topic = ${topicParam})::int + (consumer_group = ${groupParam})::int${overlapScore})`;
     params.push(CANDIDATE_LIMIT);
     const sql =
       'SELECT id, cluster_id, topic, consumer_group, finding_types, severity, summary, evidence, observed_at ' +
-      'FROM incidents WHERE topic = $1 OR consumer_group = $2' +
-      overlap +
-      ` ORDER BY observed_at DESC LIMIT $${params.length}`;
+      `FROM incidents WHERE ${conditions.join(' AND ')} ` +
+      `ORDER BY ${relevance} DESC, observed_at DESC LIMIT $${params.length}`;
     let result: { rows: Record<string, unknown>[] };
     try {
       result = await this.pool.query(sql, params);

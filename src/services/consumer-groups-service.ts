@@ -61,6 +61,11 @@ export interface ConsumerAssignmentsResult {
   observedAt: string;
 }
 
+export interface ConsumerGroupWithAssignments {
+  group: ConsumerGroupResult;
+  assignments: ConsumerAssignmentsResult;
+}
+
 export class ConsumerGroupsService {
   private readonly session: KafkaAdminSession;
   private readonly metrics: Metrics;
@@ -123,47 +128,25 @@ export class ConsumerGroupsService {
 
   async getConsumerGroup(groupId: string): Promise<ConsumerGroupResult> {
     return this.time('describe_group', () =>
-      this.withAdmin(async (admin) => {
-        const described = await admin.describeGroups([groupId]);
-        const group = requireLiveGroup(described.groups, groupId);
-        const members = [...group.members].sort((a, b) => a.memberId.localeCompare(b.memberId));
-        const page = members.slice(0, MAX_MEMBER_ROWS);
-        return {
-          groupId: group.groupId,
-          state: group.state,
-          protocolType: group.protocolType,
-          protocol: group.protocol,
-          memberCount: members.length,
-          members: page.map((member) => ({
-            memberId: member.memberId,
-            clientId: member.clientId,
-            clientHost: member.clientHost,
-          })),
-          truncated: members.length > page.length,
-          observedAt: new Date().toISOString(),
-        };
-      }),
+      this.withAdmin(async (admin) => describeGroupDetail(admin, groupId).then((row) => row.group)),
     );
   }
 
   async getConsumerAssignments(groupId: string): Promise<ConsumerAssignmentsResult> {
     return this.time('describe_assignments', () =>
-      this.withAdmin(async (admin) => {
-        const described = await admin.describeGroups([groupId]);
-        const group = requireLiveGroup(described.groups, groupId);
-        const members = [...group.members].sort((a, b) => a.memberId.localeCompare(b.memberId));
-        const page = members.slice(0, MAX_MEMBER_ROWS);
-        return {
-          groupId: group.groupId,
-          memberCount: members.length,
-          assignments: page.map((member) => ({
-            memberId: member.memberId,
-            assignment: decodeAssignment(member.memberAssignment),
-          })),
-          truncated: members.length > page.length,
-          observedAt: new Date().toISOString(),
-        };
-      }),
+      this.withAdmin(async (admin) =>
+        describeGroupDetail(admin, groupId).then((row) => row.assignments),
+      ),
+    );
+  }
+
+  /**
+   * One broker describe backs both the group summary and its assignments.
+   * Diagnosis uses this to avoid three identical describeGroups calls.
+   */
+  async getConsumerGroupWithAssignments(groupId: string): Promise<ConsumerGroupWithAssignments> {
+    return this.time('describe_group_with_assignments', () =>
+      this.withAdmin(async (admin) => describeGroupDetail(admin, groupId)),
     );
   }
 
@@ -181,6 +164,44 @@ export class ConsumerGroupsService {
   private withAdmin<T>(fn: (admin: Admin) => Promise<T>): Promise<T> {
     return this.session.run(fn);
   }
+}
+
+async function describeGroupDetail(
+  admin: Admin,
+  groupId: string,
+): Promise<ConsumerGroupWithAssignments> {
+  const described = await admin.describeGroups([groupId]);
+  const group = requireLiveGroup(described.groups, groupId);
+  const members = [...group.members].sort((a, b) => a.memberId.localeCompare(b.memberId));
+  const page = members.slice(0, MAX_MEMBER_ROWS);
+  const truncated = members.length > page.length;
+  const observedAt = new Date().toISOString();
+  return {
+    group: {
+      groupId: group.groupId,
+      state: group.state,
+      protocolType: group.protocolType,
+      protocol: group.protocol,
+      memberCount: members.length,
+      members: page.map((member) => ({
+        memberId: member.memberId,
+        clientId: member.clientId,
+        clientHost: member.clientHost,
+      })),
+      truncated,
+      observedAt,
+    },
+    assignments: {
+      groupId: group.groupId,
+      memberCount: members.length,
+      assignments: page.map((member) => ({
+        memberId: member.memberId,
+        assignment: decodeAssignment(member.memberAssignment),
+      })),
+      truncated,
+      observedAt,
+    },
+  };
 }
 
 function requireLiveGroup(groups: GroupDescription[], groupId: string): GroupDescription {

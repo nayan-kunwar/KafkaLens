@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 // Consumer group ids admit a wider charset than topic names (e.g. ':', '/'),
 // so only length is constrained here. Do not reuse the topic-name regex.
-const groupIdSchema = z.string().min(1).max(255);
+export const groupIdSchema = z.string().min(1).max(255);
 
 export const listConsumerGroupsShape = {
   groupIdContains: z.string().min(1).max(100).optional(),

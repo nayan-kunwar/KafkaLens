@@ -10,7 +10,10 @@ import type { IncidentStore, SimilarIncident } from '../persistence/incident-sto
 import type { LagHistoryPoint, LagStore } from '../persistence/lag-store.js';
 
 import type { AdminService } from './admin-service.js';
-import type { ConsumerGroupsService } from './consumer-groups-service.js';
+import type {
+  ConsumerAssignmentsResult,
+  ConsumerGroupsService,
+} from './consumer-groups-service.js';
 import type {
   CorrelationEvent,
   CorrelationResult,
@@ -191,7 +194,9 @@ export class DiagnosisService {
     observedAt: string;
   }> {
     return this.timed('find_similar_incidents', async () => {
+      const clusterId = await this.resolveClusterId([]);
       const incidents = await this.incidents.findSimilar({
+        ...(clusterId === undefined ? {} : { clusterId }),
         groupId: input.groupId,
         topic: input.topic,
         findingTypes: input.findingTypes,
@@ -215,16 +220,32 @@ export class DiagnosisService {
     const observedAt = observedAtDate.toISOString();
     const partialFailures: PartialFailure[] = [];
 
-    const group = await this.groups.getConsumerGroup(groupId);
-    const metadata = await this.admin.getTopicMetadata(topic);
-    const lag = await this.requireTopicLag(groupId, topic);
+    const clusterId = await this.resolveClusterId(partialFailures);
+    const membership = await this.groups.getConsumerGroupWithAssignments(groupId);
+    const group = membership.group;
+    const lag = await this.requireTopicLag(groupId, topic, group.state);
+    // The lag read records history in the background; wait for that sample so
+    // progress analysis is based on data from this observation, not stale rows.
+    await this.offsets.flushHistory();
 
-    const assignments = await this.readAssignments(groupId, topic, partialFailures);
-    const history = await this.readHistory(groupId, topic, observedAtDate, partialFailures);
+    const assignments = this.readAssignments(membership.assignments, topic, partialFailures);
+    const history = await this.readHistory(
+      clusterId,
+      groupId,
+      topic,
+      observedAtDate,
+      partialFailures,
+    );
     const coverageIncomplete = lag.truncated || history.truncated || assignments.truncated;
 
+    const historyByPartition = groupHistoryByPartition(history.points);
     const partitions = lag.partitions.map((row) =>
-      toDiagnosisPartition(row, assignments, history.points, observedAt),
+      toDiagnosisPartition(
+        row,
+        assignments,
+        historyByPartition.get(row.partitionId) ?? [],
+        observedAt,
+      ),
     );
     const result = diagnose({
       groupId,
@@ -259,7 +280,13 @@ export class DiagnosisService {
       message: 'Incident lookup runs from diagnose_consumer_group and find_similar_incidents.',
     };
     if (flags.incidents) {
-      relatedIncidents = await this.readSimilar(groupId, topic, result.findings, partialFailures);
+      relatedIncidents = await this.readSimilar(
+        clusterId,
+        groupId,
+        topic,
+        result.findings,
+        partialFailures,
+      );
     }
 
     let correlation: ReportCorrelation = {
@@ -275,7 +302,7 @@ export class DiagnosisService {
     }
 
     if (flags.recordIncident && shouldStore(result.findings)) {
-      await this.storeIncident(groupId, topic, observedAt, result, partialFailures);
+      await this.storeIncident(clusterId, groupId, topic, observedAt, result, partialFailures);
     }
 
     return {
@@ -289,7 +316,7 @@ export class DiagnosisService {
         protocol: group.protocol,
         memberCount: group.memberCount,
       },
-      topicPartitionCount: metadata.partitionCount,
+      topicPartitionCount: lag.partitionCount,
       partitions: views.slice(0, MAX_PARTITION_ROWS),
       partitionsTruncated: views.length > MAX_PARTITION_ROWS || lag.truncated,
       assignmentsKnown: assignments.known,
@@ -299,46 +326,44 @@ export class DiagnosisService {
     };
   }
 
-  private async requireTopicLag(groupId: string, topic: string): Promise<TopicLagResult> {
-    const lag = await this.offsets.getConsumerLag(groupId, topic);
+  private async requireTopicLag(
+    groupId: string,
+    topic: string,
+    groupState: string,
+  ): Promise<TopicLagResult> {
+    const lag = await this.offsets.getConsumerLag(groupId, topic, groupState);
     if (!('partitions' in lag)) {
       throw new AppError('INTERNAL', 'Expected per-partition lag for a single topic');
     }
     return lag;
   }
 
-  private async readAssignments(
-    groupId: string,
+  private readAssignments(
+    result: ConsumerAssignmentsResult,
     topic: string,
     partialFailures: PartialFailure[],
-  ): Promise<{ known: boolean; truncated: boolean; assigned: Set<number> }> {
-    try {
-      const result = await this.groups.getConsumerAssignments(groupId);
-      if (result.truncated || result.assignments.some((member) => member.assignment === null)) {
-        partialFailures.push({
-          source: 'assignments',
-          code: 'PARTIAL',
-          message:
-            'At least one member assignment was truncated or undecodable. Unassigned partitions were not inferred.',
-        });
-        return { known: false, truncated: result.truncated, assigned: new Set() };
-      }
-      const assigned = new Set<number>();
-      for (const member of result.assignments) {
-        for (const entry of member.assignment ?? []) {
-          if (entry.topic !== topic) continue;
-          for (const partition of entry.partitions) assigned.add(partition);
-        }
-      }
-      return { known: true, truncated: false, assigned };
-    } catch (err) {
-      if (err instanceof AppError && err.code === 'NOT_FOUND') throw err;
-      partialFailures.push(failure('assignments', err, 'Partition assignments could not be read.'));
-      return { known: false, truncated: false, assigned: new Set() };
+  ): { known: boolean; truncated: boolean; assigned: Set<number> } {
+    if (result.truncated || result.assignments.some((member) => member.assignment === null)) {
+      partialFailures.push({
+        source: 'assignments',
+        code: 'PARTIAL',
+        message:
+          'At least one member assignment was truncated or undecodable. Unassigned partitions were not inferred.',
+      });
+      return { known: false, truncated: result.truncated, assigned: new Set() };
     }
+    const assigned = new Set<number>();
+    for (const member of result.assignments) {
+      for (const entry of member.assignment ?? []) {
+        if (entry.topic !== topic) continue;
+        for (const partition of entry.partitions) assigned.add(partition);
+      }
+    }
+    return { known: true, truncated: false, assigned };
   }
 
   private async readHistory(
+    clusterId: string | undefined,
     groupId: string,
     topic: string,
     now: Date,
@@ -347,6 +372,7 @@ export class DiagnosisService {
     try {
       const since = new Date(now.getTime() - this.options.stallWindowSeconds * 1000).toISOString();
       const history = await this.history.queryHistory({
+        ...(clusterId === undefined ? {} : { clusterId }),
         groupId,
         topic,
         since,
@@ -372,7 +398,28 @@ export class DiagnosisService {
     }
   }
 
+  /**
+   * Resolves the cluster once per report so history, incident lookup, and
+   * incident storage use the same cluster scope. A failure degrades the report
+   * to unscoped history instead of failing the diagnosis.
+   */
+  private async resolveClusterId(partialFailures: PartialFailure[]): Promise<string | undefined> {
+    try {
+      return (await this.admin.getClusterInfo()).clusterId;
+    } catch (err) {
+      partialFailures.push(
+        failure(
+          'cluster',
+          err,
+          'Cluster id was unavailable. History and incidents could not be scoped to one cluster.',
+        ),
+      );
+      return undefined;
+    }
+  }
+
   private async readSimilar(
+    clusterId: string | undefined,
     groupId: string,
     topic: string,
     findings: readonly Finding[],
@@ -380,6 +427,7 @@ export class DiagnosisService {
   ): Promise<DiagnosisReport['relatedIncidents']> {
     try {
       const incidents = await this.incidents.findSimilar({
+        ...(clusterId === undefined ? {} : { clusterId }),
         groupId,
         topic,
         findingTypes: findings.map((finding) => finding.type),
@@ -404,6 +452,7 @@ export class DiagnosisService {
   }
 
   private async storeIncident(
+    clusterId: string | undefined,
     groupId: string,
     topic: string,
     observedAt: string,
@@ -412,22 +461,10 @@ export class DiagnosisService {
   ): Promise<void> {
     const top = result.findings[0];
     if (top === undefined) return;
-    let clusterId = 'unknown';
-    try {
-      clusterId = (await this.admin.getClusterInfo()).clusterId;
-    } catch (err) {
-      partialFailures.push(
-        failure(
-          'cluster',
-          err,
-          'Cluster id was unavailable. The incident uses cluster id "unknown".',
-        ),
-      );
-    }
     try {
       await this.incidents.record(
         {
-          clusterId,
+          clusterId: clusterId ?? 'unknown',
           topic,
           consumerGroup: groupId,
           findingTypes: result.findings.map((finding) => finding.type),
@@ -467,6 +504,21 @@ function shouldStore(findings: readonly Finding[]): boolean {
   );
 }
 
+function groupHistoryByPartition(
+  history: readonly LagHistoryPoint[],
+): Map<number, LagHistoryPoint[]> {
+  const byPartition = new Map<number, LagHistoryPoint[]>();
+  for (const point of history) {
+    const existing = byPartition.get(point.partition);
+    if (existing === undefined) {
+      byPartition.set(point.partition, [point]);
+    } else {
+      existing.push(point);
+    }
+  }
+  return byPartition;
+}
+
 function toDiagnosisPartition(
   row: PartitionLagRow,
   assignments: { known: boolean; assigned: Set<number> },
@@ -474,7 +526,7 @@ function toDiagnosisPartition(
   observedAt: string,
 ): DiagnosisPartition {
   const samples: OffsetSample[] = history
-    .filter((point) => point.partition === row.partitionId && point.observedAt !== observedAt)
+    .filter((point) => point.observedAt !== observedAt)
     .map((point) => ({
       observedAt: point.observedAt,
       highWatermark: point.highWatermark,

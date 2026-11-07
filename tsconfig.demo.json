@@ -3,7 +3,8 @@
   "compilerOptions": {
     "noEmit": false,
     "rootDir": "demo",
-    "outDir": "dist/demo",
+    "outDir": "dist-demo",
+    "sourceMap": false,
     "declaration": false
   },
   "include": ["demo/**/*.ts"]

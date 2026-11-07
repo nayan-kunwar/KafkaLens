@@ -5,7 +5,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'eslint.config.js'],
+    ignores: ['dist/**', 'dist-demo/**', 'node_modules/**', 'coverage/**', 'eslint.config.js'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -54,6 +54,12 @@ export default tseslint.config(
   {
     files: ['scripts/**/*.js'],
     ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      ...tseslint.configs.disableTypeChecked.languageOptions,
+      globals: {
+        process: 'readonly',
+      },
+    },
   },
   {
     files: ['src/**/*.ts'],

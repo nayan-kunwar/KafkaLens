@@ -183,6 +183,23 @@ describe('getConsumerGroup', () => {
     expect(result.members[0]?.memberId).toBe('m-000');
   });
 
+  it('describes once and returns both group and assignment views', async () => {
+    let described = 0;
+    const service = serviceWith({
+      describeGroups: () => {
+        described += 1;
+        return Promise.resolve({ groups: [group('g', [member('m1')])] });
+      },
+    });
+    const result = await service.getConsumerGroupWithAssignments('g');
+    expect(described).toBe(1);
+    expect(result.group).toMatchObject({ groupId: 'g', memberCount: 1 });
+    expect(result.assignments).toMatchObject({ groupId: 'g', memberCount: 1, truncated: false });
+    expect(result.assignments.assignments).toEqual([
+      { memberId: 'm1', assignment: [{ topic: 'orders', partitions: [0] }] },
+    ]);
+  });
+
   it('returns observed rebalance state without interpretation', async () => {
     const service = serviceWith({
       describeGroups: () =>

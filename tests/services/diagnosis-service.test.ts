@@ -35,19 +35,33 @@ function lag(overrides: Partial<TopicLagResult> = {}): TopicLagResult {
   };
 }
 
+interface ServiceCalls {
+  groupDescriptions: number;
+  topicMetadata: number;
+  lagGroupStates: (string | undefined)[];
+}
+
 function service(options: {
   historyError?: boolean;
   groupError?: AppError;
   record?: (incident: unknown) => Promise<'stored' | 'duplicate'>;
+  calls?: ServiceCalls;
 }): DiagnosisService {
+  const calls = options.calls ?? {
+    groupDescriptions: 0,
+    topicMetadata: 0,
+    lagGroupStates: [],
+  };
   const admin = {
-    getTopicMetadata: () =>
-      Promise.resolve({
+    getTopicMetadata: () => {
+      calls.topicMetadata += 1;
+      return Promise.resolve({
         name: 'payment-events',
         partitionCount: 1,
         partitions: [],
         observedAt,
-      }),
+      });
+    },
     getClusterInfo: () =>
       Promise.resolve({
         clusterId: 'cluster-1',
@@ -58,32 +72,38 @@ function service(options: {
       }),
   };
   const groups = {
-    getConsumerGroup: () => {
+    getConsumerGroupWithAssignments: () => {
+      calls.groupDescriptions += 1;
       if (options.groupError) return Promise.reject(options.groupError);
       return Promise.resolve({
-        groupId: 'payments',
-        state: 'Stable',
-        protocolType: 'consumer',
-        protocol: 'range',
-        memberCount: 1,
-        members: [],
-        truncated: false,
-        observedAt,
+        group: {
+          groupId: 'payments',
+          state: 'Stable',
+          protocolType: 'consumer',
+          protocol: 'range',
+          memberCount: 1,
+          members: [],
+          truncated: false,
+          observedAt,
+        },
+        assignments: {
+          groupId: 'payments',
+          memberCount: 1,
+          assignments: [
+            { memberId: 'member-1', assignment: [{ topic: 'payment-events', partitions: [0] }] },
+          ],
+          truncated: false,
+          observedAt,
+        },
       });
     },
-    getConsumerAssignments: () =>
-      Promise.resolve({
-        groupId: 'payments',
-        memberCount: 1,
-        assignments: [
-          { memberId: 'member-1', assignment: [{ topic: 'payment-events', partitions: [0] }] },
-        ],
-        truncated: false,
-        observedAt,
-      }),
   };
   const offsets = {
-    getConsumerLag: () => Promise.resolve(lag()),
+    getConsumerLag: (_groupId: string, _topic?: string, groupState?: string) => {
+      calls.lagGroupStates.push(groupState);
+      return Promise.resolve(lag());
+    },
+    flushHistory: () => Promise.resolve(),
   };
   const history = {
     queryHistory: () => {
@@ -131,7 +151,13 @@ function service(options: {
 describe('DiagnosisService', () => {
   it('returns a stall finding and stores an incident when history shows no progress', async () => {
     const stored: unknown[] = [];
+    const calls: ServiceCalls = {
+      groupDescriptions: 0,
+      topicMetadata: 0,
+      lagGroupStates: [],
+    };
     const report = await service({
+      calls,
       record: (incident) => {
         stored.push(incident);
         return Promise.resolve('stored');
@@ -145,6 +171,11 @@ describe('DiagnosisService', () => {
     expect(stored).toHaveLength(1);
     expect(report.evidence.some((statement) => statement.kind === 'observed_fact')).toBe(true);
     expect(report.evidence.some((statement) => statement.kind === 'inference')).toBe(true);
+    // One describe feeds both group and assignment data, and its state is
+    // reused by the lag read instead of describing the group again.
+    expect(calls.groupDescriptions).toBe(1);
+    expect(calls.lagGroupStates).toEqual(['Stable']);
+    expect(calls.topicMetadata).toBe(0);
   });
 
   it('keeps the diagnosis when lag history is unavailable', async () => {

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Security and reliability audit remediation: `npm audit` is clean for production and development dependencies, Compose ports publish on loopback with configurable PostgreSQL/Redis passwords, and metrics bind to `127.0.0.1` by default.
+- Correlation hardening: streamed body cap, redirects blocked, HTTPS-only sources, credential-free URLs, sanitized titles, and `untrusted: true` event markers.
+- Read-only capability manifest, typed MCP tool registration, prompt escaping, and schema validation for resources.
+- Cluster-scoped history and incidents, complete partition history beyond the response page, background history writes with `flushHistory()`, bounded topic concurrency, advisory-locked migrations and incident dedupe, and batched retention deletes.
+- PostgreSQL idle-client error handling and connection/statement/query timeouts, tool-level deadlines, original-cause logging, and idempotent shutdown that flushes history and closes the MCP transport. Shutdown and the migrate/retain CLIs are unit-tested.
+- Build and CI hardening: clean `dist`/`dist-demo`, demo build separated from the production image, source maps disabled in production, integration tests on pull requests, and a production dependency audit gate.
+
 ## 0.2.1
 
 - One long-lived Kafka admin client, shared by topic, group, and lag calls.

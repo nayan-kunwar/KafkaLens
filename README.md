@@ -55,32 +55,37 @@ npm run migrate
 
 All configuration is environment-driven (see `.env.example`). A `.env` file in the project root (or working directory) is loaded automatically if present; values already set in the environment are never overridden.
 
-| Variable                        | Default                                           | Description                                      |
-| ------------------------------- | ------------------------------------------------- | ------------------------------------------------ |
-| `NODE_ENV`                      | `development`                                     | Runtime environment                              |
-| `KAFKA_BROKERS`                 | `localhost:9092`                                  | Comma-separated broker list                      |
-| `KAFKA_CLIENT_ID`               | `kafka-inspector`                                 | Kafka client id                                  |
-| `KAFKA_SECURITY_PROTOCOL`       | `PLAINTEXT`                                       | `PLAINTEXT`/`SSL`/`SASL_PLAINTEXT`/`SASL_SSL`    |
-| `KAFKA_SASL_MECHANISM`          | `plain`                                           | `plain`/`scram-sha-256`/`scram-sha-512`          |
-| `KAFKA_SASL_USERNAME`           | —                                                 | Required when protocol uses SASL                 |
-| `KAFKA_SASL_PASSWORD`           | —                                                 | Required when protocol uses SASL (never logged)  |
-| `KAFKA_SSL_REJECT_UNAUTHORIZED` | `true`                                            | Verify broker TLS certificates                   |
-| `KAFKA_REQUEST_TIMEOUT_MS`      | `30000`                                           | Kafka request timeout                            |
-| `KAFKA_CONNECTION_TIMEOUT_MS`   | `10000`                                           | Kafka connection timeout                         |
-| `KAFKA_RETRY_ATTEMPTS`          | `5`                                               | Client retry attempts on retryable errors        |
-| `POSTGRES_URL`                  | `postgresql://postgres:postgres@localhost:5432/…` | Durable lag and incident history                 |
-| `REDIS_URL`                     | `redis://localhost:6379`                          | Short-lived metadata cache                       |
-| `LOG_LEVEL`                     | `info`                                            | Pino log level (stderr)                          |
-| `PARTITION_IMBALANCE_RATIO`     | `5`                                               | Max/min (or max/mean) lag outlier threshold      |
-| `STALL_WINDOW_SECONDS`          | `300`                                             | Progress and rate observation window             |
-| `LAG_RETENTION_DAYS`            | `14`                                              | `npm run retain` cutoff for lag rows. `0` skips  |
-| `INCIDENT_RETENTION_DAYS`       | `90`                                              | `npm run retain` cutoff for incidents. `0` skips |
-| `CACHE_TTL_SECONDS`             | `15`                                              | Redis TTL for cluster and topic metadata         |
-| `METRICS_ENABLED`               | `false`                                           | Expose Prometheus metrics                        |
-| `METRICS_PORT`                  | `9464`                                            | Metrics HTTP port (`GET /metrics`)               |
-| `GITHUB_REPOSITORY`             | —                                                 | Optional `owner/name` for change correlation     |
-| `GITHUB_TOKEN`                  | —                                                 | Optional token for the GitHub API (never logged) |
-| `DEPLOYMENT_SOURCE_URL`         | —                                                 | Optional JSON feed of deployments                |
+| Variable                         | Default                                           | Description                                      |
+| -------------------------------- | ------------------------------------------------- | ------------------------------------------------ |
+| `NODE_ENV`                       | `development`                                     | Runtime environment                              |
+| `KAFKA_BROKERS`                  | `localhost:9092`                                  | Comma-separated broker list                      |
+| `KAFKA_CLIENT_ID`                | `kafka-inspector`                                 | Kafka client id                                  |
+| `KAFKA_SECURITY_PROTOCOL`        | `PLAINTEXT`                                       | `PLAINTEXT`/`SSL`/`SASL_PLAINTEXT`/`SASL_SSL`    |
+| `KAFKA_SASL_MECHANISM`           | `plain`                                           | `plain`/`scram-sha-256`/`scram-sha-512`          |
+| `KAFKA_SASL_USERNAME`            | —                                                 | Required when protocol uses SASL                 |
+| `KAFKA_SASL_PASSWORD`            | —                                                 | Required when protocol uses SASL (never logged)  |
+| `KAFKA_SSL_REJECT_UNAUTHORIZED`  | `true`                                            | Verify broker TLS certificates                   |
+| `KAFKA_REQUEST_TIMEOUT_MS`       | `30000`                                           | Kafka request timeout                            |
+| `KAFKA_CONNECTION_TIMEOUT_MS`    | `10000`                                           | Kafka connection timeout                         |
+| `KAFKA_RETRY_ATTEMPTS`           | `5`                                               | Client retry attempts on retryable errors        |
+| `POSTGRES_URL`                   | `postgresql://postgres:postgres@localhost:5432/…` | Durable lag and incident history                 |
+| `POSTGRES_CONNECTION_TIMEOUT_MS` | `5000`                                            | PostgreSQL connection timeout                    |
+| `POSTGRES_STATEMENT_TIMEOUT_MS`  | `10000`                                           | Server-side statement timeout                    |
+| `POSTGRES_QUERY_TIMEOUT_MS`      | `15000`                                           | Client-side query deadline                       |
+| `REDIS_URL`                      | `redis://localhost:6379`                          | Short-lived metadata cache                       |
+| `LOG_LEVEL`                      | `info`                                            | Pino log level (stderr)                          |
+| `PARTITION_IMBALANCE_RATIO`      | `5`                                               | Max/min (or max/mean) lag outlier threshold      |
+| `STALL_WINDOW_SECONDS`           | `300`                                             | Progress and rate observation window             |
+| `LAG_RETENTION_DAYS`             | `14`                                              | `npm run retain` cutoff for lag rows. `0` skips  |
+| `INCIDENT_RETENTION_DAYS`        | `90`                                              | `npm run retain` cutoff for incidents. `0` skips |
+| `CACHE_TTL_SECONDS`              | `15`                                              | Redis TTL for cluster and topic metadata         |
+| `TOOL_TIMEOUT_MS`                | `60000`                                           | MCP tool response deadline                       |
+| `METRICS_ENABLED`                | `false`                                           | Expose Prometheus metrics                        |
+| `METRICS_HOST`                   | `127.0.0.1`                                       | Metrics bind address                             |
+| `METRICS_PORT`                   | `9464`                                            | Metrics HTTP port (`GET /metrics`)               |
+| `GITHUB_REPOSITORY`              | —                                                 | Optional `owner/name` for change correlation     |
+| `GITHUB_TOKEN`                   | —                                                 | Optional token for the GitHub API (never logged) |
+| `DEPLOYMENT_SOURCE_URL`          | —                                                 | Optional JSON feed of deployments                |
 
 Invalid configuration fails fast with a structured `CONFIG_INVALID` error that reports field names only — never values or credentials.
 

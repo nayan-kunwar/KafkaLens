@@ -14,22 +14,33 @@ function boolEnv(fallback: 'true' | 'false') {
     });
 }
 
+const DEFAULT_KAFKA_BROKERS = 'localhost:9092';
+const DEFAULT_POSTGRES_URL = 'postgresql://postgres:postgres@localhost:5432/kafka_inspector';
+
 /**
- * Non-negative integer that rejects empty strings. Plain `z.coerce.number`
- * turns `''` into `0`, which would silently disable retention instead of
- * failing fast, so blank input is mapped to NaN (always invalid) first.
+ * Bounded integer that rejects empty strings. Plain `z.coerce.number` turns
+ * `''` into `0`, which would silently disable retention instead of failing
+ * fast, so blank input is mapped to NaN (always invalid) first. The upper
+ * bound also rejects non-finite values such as `Infinity`.
  */
-function nonNegativeIntEnv(fallback: number) {
+function boundedIntEnv(fallback: number, min: number, max: number) {
   return z.preprocess(
     (value) => (typeof value === 'string' && value.trim() === '' ? Number.NaN : value),
-    z.coerce.number().int().min(0).default(fallback),
+    z.coerce.number().int().min(min).max(max).default(fallback),
+  );
+}
+
+function boundedNumberEnv(fallback: number, min: number, max: number) {
+  return z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() === '' ? Number.NaN : value),
+    z.coerce.number().min(min).max(max).default(fallback),
   );
 }
 
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-    KAFKA_BROKERS: z.string().min(1).default('localhost:9092'),
+    KAFKA_BROKERS: z.string().min(1).default(DEFAULT_KAFKA_BROKERS),
     KAFKA_CLIENT_ID: z.string().min(1).default('kafka-inspector'),
     KAFKA_SECURITY_PROTOCOL: z
       .enum(['PLAINTEXT', 'SSL', 'SASL_PLAINTEXT', 'SASL_SSL'])
@@ -38,19 +49,21 @@ const envSchema = z
     KAFKA_SASL_USERNAME: z.string().min(1).optional(),
     KAFKA_SASL_PASSWORD: z.string().min(1).optional(),
     KAFKA_SSL_REJECT_UNAUTHORIZED: boolEnv('true'),
-    KAFKA_REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
-    KAFKA_CONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
-    KAFKA_RETRY_ATTEMPTS: z.coerce.number().int().min(0).default(5),
-    POSTGRES_URL: z
-      .string()
-      .min(1)
-      .default('postgresql://postgres:postgres@localhost:5432/kafka_inspector'),
+    KAFKA_REQUEST_TIMEOUT_MS: boundedIntEnv(30_000, 100, 300_000),
+    KAFKA_CONNECTION_TIMEOUT_MS: boundedIntEnv(10_000, 100, 300_000),
+    KAFKA_RETRY_ATTEMPTS: boundedIntEnv(5, 0, 100),
+    POSTGRES_URL: z.string().min(1).default(DEFAULT_POSTGRES_URL),
+    POSTGRES_CONNECTION_TIMEOUT_MS: boundedIntEnv(5_000, 100, 300_000),
+    POSTGRES_STATEMENT_TIMEOUT_MS: boundedIntEnv(10_000, 100, 300_000),
+    POSTGRES_QUERY_TIMEOUT_MS: boundedIntEnv(15_000, 100, 300_000),
     REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
     LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
-    PARTITION_IMBALANCE_RATIO: z.coerce.number().positive().default(5),
-    STALL_WINDOW_SECONDS: z.coerce.number().positive().default(300),
-    CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(15),
+    PARTITION_IMBALANCE_RATIO: boundedNumberEnv(5, 1, 1_000_000),
+    STALL_WINDOW_SECONDS: boundedNumberEnv(300, 1, 604_800),
+    CACHE_TTL_SECONDS: boundedIntEnv(15, 1, 86_400),
+    TOOL_TIMEOUT_MS: boundedIntEnv(60_000, 100, 600_000),
     METRICS_ENABLED: boolEnv('false'),
+    METRICS_HOST: z.string().min(1).max(255).default('127.0.0.1'),
     METRICS_PORT: z.coerce.number().int().min(0).max(65535).default(9464),
     GITHUB_REPOSITORY: z
       .string()
@@ -58,10 +71,26 @@ const envSchema = z
       .optional(),
     GITHUB_TOKEN: z.string().min(1).optional(),
     DEPLOYMENT_SOURCE_URL: z.string().url().optional(),
-    LAG_RETENTION_DAYS: nonNegativeIntEnv(14),
-    INCIDENT_RETENTION_DAYS: nonNegativeIntEnv(90),
+    LAG_RETENTION_DAYS: boundedIntEnv(14, 0, 36_500),
+    INCIDENT_RETENTION_DAYS: boundedIntEnv(90, 0, 36_500),
   })
   .superRefine((env, ctx) => {
+    if (env.NODE_ENV === 'production') {
+      if (env.KAFKA_BROKERS === DEFAULT_KAFKA_BROKERS) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['KAFKA_BROKERS'],
+          message: 'must be set explicitly in production; the localhost default is not allowed',
+        });
+      }
+      if (env.POSTGRES_URL === DEFAULT_POSTGRES_URL) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['POSTGRES_URL'],
+          message: 'must be set explicitly in production; the localhost default is not allowed',
+        });
+      }
+    }
     if (!env.KAFKA_SECURITY_PROTOCOL.startsWith('SASL')) return;
     if (!env.KAFKA_SASL_USERNAME) {
       ctx.addIssue({

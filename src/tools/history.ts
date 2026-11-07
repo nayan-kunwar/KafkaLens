@@ -11,13 +11,16 @@ export function createGetLagHistoryHandler(
   lagStore: LagStore,
   logger: Logger,
   metrics: Metrics = noopMetrics,
+  resolveClusterId?: () => Promise<string | undefined>,
 ): (args: GetLagHistoryInput) => Promise<CallToolResult> {
   return (args) =>
     executeTool(
       logger,
       'get_lag_history',
       async () => {
+        const clusterId = resolveClusterId === undefined ? undefined : await resolveClusterId();
         const { observations, truncated } = await lagStore.queryHistory({
+          ...(clusterId === undefined ? {} : { clusterId }),
           groupId: args.groupId,
           topic: args.topic,
           partition: args.partition,

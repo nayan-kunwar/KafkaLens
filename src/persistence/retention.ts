@@ -15,17 +15,34 @@ export function retentionCutoff(days: number, now: Date = new Date()): Date | nu
   return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 }
 
+export const RETENTION_BATCH_ROWS = 5_000;
+
+/**
+ * Deletes in bounded batches so one retention run does not hold a long
+ * transaction or lock a large share of the table. Returns the total deleted.
+ */
 export async function deleteOlderThan(
   pool: Pool,
   table: RetentionTable,
   cutoff: Date,
+  batchSize: number = RETENTION_BATCH_ROWS,
 ): Promise<number> {
   const name = TABLES[table];
+  const limit = Number.isInteger(batchSize) && batchSize > 0 ? batchSize : RETENTION_BATCH_ROWS;
   try {
-    const result = await pool.query(`DELETE FROM ${name} WHERE observed_at < $1`, [
-      cutoff.toISOString(),
-    ]);
-    return result.rowCount ?? 0;
+    let total = 0;
+    for (;;) {
+      const result = await pool.query(
+        `WITH doomed AS (
+           SELECT id FROM ${name} WHERE observed_at < $1 ORDER BY observed_at LIMIT $2
+         )
+         DELETE FROM ${name} WHERE id IN (SELECT id FROM doomed)`,
+        [cutoff.toISOString(), limit],
+      );
+      const deleted = result.rowCount ?? 0;
+      total += deleted;
+      if (deleted < limit) return total;
+    }
   } catch {
     throw new AppError('STORE_UNAVAILABLE', 'PostgreSQL retention delete failed', {
       store: 'postgres',

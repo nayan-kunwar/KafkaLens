@@ -2,7 +2,7 @@ import type { Pool } from 'pg';
 import { describe, expect, it } from 'vitest';
 
 import { AppError } from '../../src/errors/app-error.js';
-import { applyMigrations, sqlStatements } from '../../src/persistence/migrate.js';
+import { applyMigrations } from '../../src/persistence/migrate.js';
 import {
   deleteOlderThan,
   retentionCutoff as cutoff,
@@ -26,22 +26,20 @@ describe('retention cutoff', () => {
   });
 });
 
-describe('migration statements', () => {
-  it('drops comments and blank pieces', () => {
-    expect(
-      sqlStatements('-- note\nCREATE TABLE t (id INT);\n\nCREATE INDEX i ON t (id);\n'),
-    ).toEqual(['CREATE TABLE t (id INT)', 'CREATE INDEX i ON t (id)']);
-  });
-});
-
 describe('deleteOlderThan', () => {
   const deletedAt = new Date('2026-06-01T00:00:00.000Z');
 
-  function stubPool(rowCount: number): { pool: Pool; seen: { sql: string; params: unknown[] }[] } {
+  function stubPool(rowCounts: number[]): {
+    pool: Pool;
+    seen: { sql: string; params: unknown[] }[];
+  } {
     const seen: { sql: string; params: unknown[] }[] = [];
+    let call = 0;
     const pool = {
       query: (sql: string, params: unknown[] = []) => {
         seen.push({ sql, params });
+        const rowCount = rowCounts[call] ?? 0;
+        call += 1;
         return Promise.resolve({ rowCount, rows: [] });
       },
     };
@@ -49,16 +47,23 @@ describe('deleteOlderThan', () => {
   }
 
   it.each([['lag_observations'], ['incidents']] as RetentionTable[][])(
-    'deletes from %s with the cutoff as a bound parameter',
+    'deletes from %s with a bounded CTE and the cutoff as a bound parameter',
     async (table) => {
-      const { pool, seen } = stubPool(3);
+      const { pool, seen } = stubPool([3]);
       const deleted = await deleteOlderThan(pool, table, deletedAt);
       expect(deleted).toBe(3);
       expect(seen).toHaveLength(1);
-      expect(seen[0]?.sql).toBe(`DELETE FROM ${table} WHERE observed_at < $1`);
-      expect(seen[0]?.params).toEqual([deletedAt.toISOString()]);
+      expect(seen[0]?.sql).toContain(`DELETE FROM ${table} WHERE id IN`);
+      expect(seen[0]?.params).toEqual([deletedAt.toISOString(), 5_000]);
     },
   );
+
+  it('keeps deleting until a batch is smaller than the batch size', async () => {
+    const { pool, seen } = stubPool([2, 2, 1]);
+    const deleted = await deleteOlderThan(pool, 'incidents', deletedAt, 2);
+    expect(deleted).toBe(5);
+    expect(seen).toHaveLength(3);
+  });
 
   it('maps a database failure to STORE_UNAVAILABLE with the table in context', async () => {
     const pool = {
@@ -73,7 +78,6 @@ describe('deleteOlderThan', () => {
 
 describe('applyMigrations', () => {
   interface StubClient {
-    statements: string[];
     query: (sql: string, params?: unknown[]) => Promise<{ rowCount: number; rows: unknown[] }>;
     release: () => void;
   }
@@ -88,10 +92,13 @@ describe('applyMigrations', () => {
     const statements: string[] = [];
     const inserts: string[] = [];
     const client: StubClient = {
-      statements,
       query: (sql: string, params: unknown[] = []) => {
         statements.push(sql);
         if (failOn?.test(sql)) return Promise.reject(new Error('syntax error'));
+        if (sql.startsWith('SELECT 1 FROM schema_migrations')) {
+          const version = params[0] as string;
+          return Promise.resolve({ rowCount: applied.has(version) ? 1 : 0, rows: [] });
+        }
         if (sql.startsWith('INSERT INTO schema_migrations')) {
           const version = params[0] as string;
           applied.add(version);
@@ -102,30 +109,37 @@ describe('applyMigrations', () => {
       release: () => undefined,
     };
     const pool = {
-      query: (sql: string, params: unknown[] = []) => {
-        if (sql.startsWith('SELECT 1 FROM schema_migrations')) {
-          const version = params[0] as string;
-          return Promise.resolve({ rowCount: applied.has(version) ? 1 : 0, rows: [] });
-        }
-        return Promise.resolve({ rowCount: 0, rows: [] });
-      },
       connect: () => Promise.resolve(client),
     };
     return { pool: pool as unknown as Pool, applied, statements, inserts };
   }
 
-  it('applies pending files in order and records each one', async () => {
+  it('applies pending files in order inside the advisory lock', async () => {
     const { pool, applied, statements, inserts } = stubPool();
     const result = await applyMigrations(pool);
-    expect(result).toEqual(['001-lag-observations.sql', '002-incidents.sql']);
-    expect(applied).toEqual(new Set(['001-lag-observations.sql', '002-incidents.sql']));
-    expect(inserts).toEqual(['001-lag-observations.sql', '002-incidents.sql']);
-    const lagTable = statements.findIndex((sql) => sql.includes('lag_observations'));
+    expect(result).toEqual([
+      '001-lag-observations.sql',
+      '002-incidents.sql',
+      '003-cluster-indexes.sql',
+    ]);
+    expect(applied).toEqual(
+      new Set(['001-lag-observations.sql', '002-incidents.sql', '003-cluster-indexes.sql']),
+    );
+    expect(inserts).toEqual([
+      '001-lag-observations.sql',
+      '002-incidents.sql',
+      '003-cluster-indexes.sql',
+    ]);
+    const lock = statements.indexOf('SELECT pg_advisory_lock($1)');
+    const firstCheck = statements.findIndex((sql) => sql.startsWith('SELECT 1 FROM'));
+    const unlock = statements.indexOf('SELECT pg_advisory_unlock($1)');
+    expect(lock).toBeGreaterThanOrEqual(0);
+    expect(firstCheck).toBeGreaterThan(lock);
+    expect(unlock).toBeGreaterThan(firstCheck);
     const lagRecordAt = statements.findIndex((sql) =>
       sql.startsWith('INSERT INTO schema_migrations'),
     );
-    expect(lagTable).toBeGreaterThanOrEqual(0);
-    expect(lagRecordAt).toBeGreaterThan(lagTable);
+    expect(lagRecordAt).toBeGreaterThan(lock);
   });
 
   it('is a no-op on the second run', async () => {

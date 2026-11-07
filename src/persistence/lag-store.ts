@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import type { Pool } from 'pg';
 
 import { AppError } from '../errors/app-error.js';
 
@@ -38,6 +38,7 @@ export interface LagObservationRow {
 }
 
 export interface LagHistoryQuery {
+  clusterId?: string | undefined;
   groupId: string;
   topic: string;
   partition?: number | undefined;
@@ -63,10 +64,6 @@ export class LagStore {
 
   constructor(pool: Pool) {
     this.pool = pool;
-  }
-
-  static fromUrl(url: string): LagStore {
-    return new LagStore(new Pool({ connectionString: url }));
   }
 
   async ensureSchema(): Promise<void> {
@@ -110,8 +107,14 @@ export class LagStore {
   }
 
   async queryHistory(query: LagHistoryQuery): Promise<LagHistoryResult> {
-    const conditions = ['consumer_group = $1', 'topic = $2'];
-    const params: unknown[] = [query.groupId, query.topic];
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    if (query.clusterId !== undefined) {
+      params.push(query.clusterId);
+      conditions.push(`cluster_id = $${params.length}`);
+    }
+    params.push(query.groupId, query.topic);
+    conditions.push(`consumer_group = $${params.length - 1}`, `topic = $${params.length}`);
     if (query.partition !== undefined) {
       params.push(query.partition);
       conditions.push(`partition = $${params.length}`);

@@ -1,14 +1,15 @@
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { Pool } from 'pg';
 
 import { MetadataCache } from './cache/metadata-cache.js';
 import { loadEnv } from './config/env.js';
 import { loadDotenv } from './config/load-dotenv.js';
 import { AppError } from './errors/app-error.js';
+import { createShutdownHandler } from './lifecycle/shutdown.js';
 import { startMetricsServer } from './observability/metrics-server.js';
 import { createMetrics } from './observability/metrics.js';
 import { IncidentStore } from './persistence/incident-store.js';
 import { LagStore } from './persistence/lag-store.js';
+import { createPgPool } from './persistence/pg-pool.js';
 import { createMcpServer } from './server/mcp-server.js';
 import { AdminService } from './services/admin-service.js';
 import { ConsumerGroupsService } from './services/consumer-groups-service.js';
@@ -18,12 +19,14 @@ import { KafkaAdminSession } from './services/kafka-admin-session.js';
 import { createKafka } from './services/kafka-client.js';
 import { OffsetsService } from './services/offsets-service.js';
 import { ReadinessService } from './services/readiness-service.js';
+import { setToolTimeoutMs } from './tools/run-tool.js';
 import { createLogger } from './utils/logger.js';
 
 async function main(): Promise<void> {
   const dotenvFiles = loadDotenv();
   const env = loadEnv();
   const logger = createLogger(env.LOG_LEVEL);
+  setToolTimeoutMs(env.TOOL_TIMEOUT_MS);
   logger.debug({ files: dotenvFiles }, 'dotenv files loaded');
 
   process.on('uncaughtException', (err) => {
@@ -39,7 +42,7 @@ async function main(): Promise<void> {
   let metricsServer: { close: (callback?: () => void) => void } | null = null;
   if (env.METRICS_ENABLED) {
     try {
-      metricsServer = await startMetricsServer(env.METRICS_PORT, metrics, logger);
+      metricsServer = await startMetricsServer(env.METRICS_PORT, metrics, logger, env.METRICS_HOST);
     } catch (err) {
       logger.warn(
         { err: err instanceof Error ? err.message : String(err), port: env.METRICS_PORT },
@@ -59,10 +62,7 @@ async function main(): Promise<void> {
     session,
   });
   const consumerGroupsService = new ConsumerGroupsService(kafka, { metrics, logger, session });
-  const pool = new Pool({
-    connectionString: env.POSTGRES_URL,
-    connectionTimeoutMillis: 5_000,
-  });
+  const pool = createPgPool(env, logger);
   const lagStore = new LagStore(pool);
   const incidentStore = new IncidentStore(pool);
   logger.info('schema is applied by npm run migrate, not during server startup');
@@ -77,7 +77,6 @@ async function main(): Promise<void> {
     githubRepository: env.GITHUB_REPOSITORY,
     githubToken: env.GITHUB_TOKEN,
     deploymentSourceUrl: env.DEPLOYMENT_SOURCE_URL,
-    logger,
   });
   const diagnosisService = new DiagnosisService(
     adminService,
@@ -106,18 +105,21 @@ async function main(): Promise<void> {
     metrics,
   });
 
-  const shutdown = (): void => {
-    const closeMetrics = metricsServer
-      ? new Promise<void>((resolve) => {
-          metricsServer?.close(() => resolve());
-        })
-      : Promise.resolve();
-    Promise.all([lagStore.close(), cache.close(), session.close(), closeMetrics])
-      .catch(() => undefined)
-      .finally(() => process.exit(0));
-  };
+  const shutdown = createShutdownHandler({
+    logger,
+    flushHistory: () => offsetsService.flushHistory(),
+    close: () => {
+      const closeMetrics = metricsServer
+        ? new Promise<void>((resolve) => {
+            metricsServer?.close(() => resolve());
+          })
+        : Promise.resolve();
+      return [server.close(), lagStore.close(), cache.close(), session.close(), closeMetrics];
+    },
+    exit: (code) => process.exit(code),
+  });
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(signal, shutdown);
+    process.once(signal, () => shutdown(signal));
   }
 
   await server.connect(new StdioServerTransport());

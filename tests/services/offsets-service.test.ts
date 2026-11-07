@@ -72,6 +72,15 @@ async function expectAppError(promise: Promise<unknown>, code: string): Promise<
   return error;
 }
 
+/** Waits for a fire-and-forget history write to settle. */
+async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error('timed out waiting for history write');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 const GROUP = 'lag-worker';
 const TOPIC = 'lag-orders';
 
@@ -335,6 +344,7 @@ describe('lag history recording', () => {
     });
 
     await service.getConsumerLag(GROUP, TOPIC);
+    await waitFor(() => recorded.length === 3);
     expect(recorded).toHaveLength(3);
     expect(recorded[0]).toMatchObject({
       clusterId: 'test-cluster',
@@ -352,6 +362,20 @@ describe('lag history recording', () => {
     }
   });
 
+  it('returns lag before a slow history write finishes', async () => {
+    let release: () => void = () => undefined;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const service = recordingService(topicStubs(), {
+      recordBatch: () => blocked,
+    });
+
+    const result = (await service.getConsumerLag(GROUP, TOPIC)) as TopicLagResult;
+    expect(result.totalLag).toBe('60');
+    release();
+  });
+
   it('still returns lag when recording fails', async () => {
     const service = recordingService(topicStubs(), {
       recordBatch: () => Promise.reject(new AppError('STORE_UNAVAILABLE', 'down')),
@@ -359,14 +383,46 @@ describe('lag history recording', () => {
 
     const result = (await service.getConsumerLag(GROUP, TOPIC)) as TopicLagResult;
     expect(result.totalLag).toBe('60');
+    // Let the rejected background write settle; recordHistory must swallow it.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+
+  it('persists every partition even when the response page is capped at 500', async () => {
+    const ids = Array.from({ length: 501 }, (_, i) => i);
+    const recorded: LagObservationRow[] = [];
+    const service = recordingService(
+      {
+        fetchTopicMetadata: () => Promise.resolve(meta(TOPIC, ids)),
+        fetchTopicOffsets: () =>
+          Promise.resolve(ids.map((partition) => ({ partition, high: '1', low: '0' }))),
+        fetchOffsets: () => Promise.resolve([]),
+      },
+      {
+        recordBatch: (rows: LagObservationRow[]) => {
+          recorded.push(...rows);
+          return Promise.resolve();
+        },
+      },
+    );
+
+    const result = (await service.getConsumerLag(GROUP, TOPIC)) as TopicLagResult;
+    expect(result.partitions).toHaveLength(500);
+    expect(result.truncated).toBe(true);
+    await waitFor(() => recorded.length === 501);
+    expect(recorded).toHaveLength(501);
+    expect(recorded.at(-1)?.partition).toBe(500);
   });
 
   it('skips recording when the cluster id cannot be resolved', async () => {
     let recorded = 0;
+    let describeAttempted = false;
     const admin = {
       connect: () => Promise.resolve(),
       disconnect: () => Promise.resolve(),
-      describeCluster: () => Promise.reject(new Error('no coordinator')),
+      describeCluster: () => {
+        describeAttempted = true;
+        return Promise.reject(new Error('no coordinator'));
+      },
       fetchTopicMetadata: () => Promise.resolve(meta(TOPIC, [0])),
       fetchTopicOffsets: () => Promise.resolve([{ partition: 0, high: '1', low: '0' }]),
       fetchOffsets: () => Promise.resolve([]),
@@ -401,6 +457,8 @@ describe('lag history recording', () => {
 
     const result = (await service.getConsumerLag(GROUP, TOPIC)) as TopicLagResult;
     expect(result.unknownPartitionCount).toBe(1);
+    await waitFor(() => describeAttempted);
+    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(recorded).toBe(0);
   });
 });

@@ -1,4 +1,5 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer, type ToolCallback } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ZodRawShapeCompat } from '@modelcontextprotocol/sdk/server/zod-compat.js';
 import type { Logger } from 'pino';
 
 import { noopMetrics, type Metrics } from '../observability/metrics.js';
@@ -69,13 +70,23 @@ export function createMcpServer(deps: ServerDeps): McpServer {
   const metrics = deps.metrics ?? noopMetrics;
   const server = new McpServer(SERVER_INFO);
 
-  const register = (
+  const register = <Shape extends ZodRawShapeCompat | undefined = undefined>(
     name: ReadOnlyToolName,
-    config: { title: string; description: string; inputSchema?: object },
-    handler: (args: never) => Promise<{ content: { type: 'text'; text: string }[] }>,
+    config: { title: string; description: string; inputSchema?: Shape },
+    handler: ToolCallback<Shape>,
   ): void => {
     assertReadOnlyTool(name);
-    const toolConfig = {
+    const toolConfig: {
+      title: string;
+      description: string;
+      annotations: {
+        readOnlyHint: boolean;
+        destructiveHint: boolean;
+        idempotentHint: boolean;
+        openWorldHint: boolean;
+      };
+      inputSchema?: Shape;
+    } = {
       title: config.title,
       description: config.description,
       annotations: {
@@ -84,9 +95,9 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         idempotentHint: true,
         openWorldHint: name !== 'health_check',
       },
-      ...(config.inputSchema === undefined ? {} : { inputSchema: config.inputSchema }),
     };
-    server.registerTool(name, toolConfig as never, handler as never);
+    if (config.inputSchema !== undefined) toolConfig.inputSchema = config.inputSchema;
+    server.registerTool(name, toolConfig, handler);
   };
 
   register(
@@ -115,7 +126,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'Reports Kafka, PostgreSQL, and Redis. A down dependency is a status in the report and does not fail this call. ' +
         'health_check remains process liveness and does not contact dependencies. Read-only.',
     },
-    createGetReadinessHandler(deps.readinessService, deps.logger, metrics) as never,
+    createGetReadinessHandler(deps.readinessService, deps.logger, metrics),
   );
 
   register(
@@ -124,7 +135,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
       title: 'Get cluster info',
       description: 'Returns Kafka cluster identity and broker list. Read-only connectivity check.',
     },
-    createGetClusterInfoHandler(deps.adminService, deps.logger, metrics) as never,
+    createGetClusterInfoHandler(deps.adminService, deps.logger, metrics),
   );
 
   register(
@@ -136,7 +147,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'limit caps the result (default 100, max 500). Response includes total and truncated flags. Read-only.',
       inputSchema: listTopicsShape,
     },
-    createListTopicsHandler(deps.adminService, deps.logger, metrics) as never,
+    createListTopicsHandler(deps.adminService, deps.logger, metrics),
   );
 
   register(
@@ -148,7 +159,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'Errors with NOT_FOUND if the topic does not exist. Read-only.',
       inputSchema: getTopicMetadataShape,
     },
-    createGetTopicMetadataHandler(deps.adminService, deps.logger, metrics) as never,
+    createGetTopicMetadataHandler(deps.adminService, deps.logger, metrics),
   );
 
   register(
@@ -161,7 +172,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'otherwise up to 500 partitions with partitionCount and truncated flags. Read-only.',
       inputSchema: getPartitionInfoShape,
     },
-    createGetPartitionInfoHandler(deps.adminService, deps.logger, metrics) as never,
+    createGetPartitionInfoHandler(deps.adminService, deps.logger, metrics),
   );
 
   register(
@@ -174,7 +185,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'Response includes state and memberCount per group with total and truncated flags. Read-only.',
       inputSchema: listConsumerGroupsShape,
     },
-    createListConsumerGroupsHandler(deps.consumerGroupsService, deps.logger, metrics) as never,
+    createListConsumerGroupsHandler(deps.consumerGroupsService, deps.logger, metrics),
   );
 
   register(
@@ -186,7 +197,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'Errors with NOT_FOUND if the group does not exist. Read-only.',
       inputSchema: getConsumerGroupShape,
     },
-    createGetConsumerGroupHandler(deps.consumerGroupsService, deps.logger, metrics) as never,
+    createGetConsumerGroupHandler(deps.consumerGroupsService, deps.logger, metrics),
   );
 
   register(
@@ -199,7 +210,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'Errors with NOT_FOUND if the group does not exist. Read-only.',
       inputSchema: getConsumerAssignmentsShape,
     },
-    createGetConsumerAssignmentsHandler(deps.consumerGroupsService, deps.logger, metrics) as never,
+    createGetConsumerAssignmentsHandler(deps.consumerGroupsService, deps.logger, metrics),
   );
 
   register(
@@ -213,7 +224,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'Observations are also persisted to lag history when PostgreSQL is available. Read-only.',
       inputSchema: getConsumerLagShape,
     },
-    createGetConsumerLagHandler(deps.offsetsService, deps.logger, metrics) as never,
+    createGetConsumerLagHandler(deps.offsetsService, deps.logger, metrics),
   );
 
   register(
@@ -226,7 +237,15 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'Errors with STORE_UNAVAILABLE when PostgreSQL is unreachable. Read-only.',
       inputSchema: getLagHistoryShape,
     },
-    createGetLagHistoryHandler(deps.lagStore, deps.logger, metrics) as never,
+    createGetLagHistoryHandler(deps.lagStore, deps.logger, metrics, async () => {
+      try {
+        return (await deps.adminService.getClusterInfo()).clusterId;
+      } catch {
+        // History is still useful when the cluster identity cannot be read;
+        // fall back to an unscoped query rather than failing the tool.
+        return undefined;
+      }
+    }),
   );
 
   register(
@@ -238,7 +257,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'Unknown lag stays null. History and assignment failures are reported and do not fail the call. Read-only.',
       inputSchema: diagnoseConsumerGroupShape,
     },
-    createAnalyzeConsumerLagHandler(deps.diagnosisService, deps.logger, metrics) as never,
+    createAnalyzeConsumerLagHandler(deps.diagnosisService, deps.logger, metrics),
   );
 
   register(
@@ -250,7 +269,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'Fewer than two known lags is insufficient evidence. Read-only.',
       inputSchema: diagnoseConsumerGroupShape,
     },
-    createAnalyzePartitionImbalanceHandler(deps.diagnosisService, deps.logger, metrics) as never,
+    createAnalyzePartitionImbalanceHandler(deps.diagnosisService, deps.logger, metrics),
   );
 
   register(
@@ -262,7 +281,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'Rates are labeled estimates and are not broker producer metrics. Read-only.',
       inputSchema: diagnoseConsumerGroupShape,
     },
-    createAnalyzeThroughputHandler(deps.diagnosisService, deps.logger, metrics) as never,
+    createAnalyzeThroughputHandler(deps.diagnosisService, deps.logger, metrics),
   );
 
   register(
@@ -274,7 +293,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'actively processing, or insufficient evidence. No progress is not reported as a crash. Read-only.',
       inputSchema: diagnoseConsumerGroupShape,
     },
-    createDetectStalledConsumersHandler(deps.diagnosisService, deps.logger, metrics) as never,
+    createDetectStalledConsumersHandler(deps.diagnosisService, deps.logger, metrics),
   );
 
   register(
@@ -287,7 +306,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'Optional history, incidents, and change correlation fail open. Read-only.',
       inputSchema: diagnoseConsumerGroupShape,
     },
-    createDiagnoseConsumerGroupHandler(deps.diagnosisService, deps.logger, metrics) as never,
+    createDiagnoseConsumerGroupHandler(deps.diagnosisService, deps.logger, metrics),
   );
 
   register(
@@ -299,7 +318,7 @@ export function createMcpServer(deps: ServerDeps): McpServer {
         'Scores are deterministic. Errors with STORE_UNAVAILABLE when PostgreSQL is unreachable. Read-only.',
       inputSchema: findSimilarIncidentsShape,
     },
-    createFindSimilarIncidentsHandler(deps.diagnosisService, deps.logger, metrics) as never,
+    createFindSimilarIncidentsHandler(deps.diagnosisService, deps.logger, metrics),
   );
 
   registerResources(server, deps);

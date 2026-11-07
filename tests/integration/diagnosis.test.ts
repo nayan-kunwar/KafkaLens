@@ -119,15 +119,16 @@ describe('diagnose_consumer_group', () => {
       offsets,
       lagStore,
       incidentStore,
-      new CorrelationService({ logger }),
+      new CorrelationService({}),
       { imbalanceRatio: 5, stallWindowSeconds: 60, logger },
     );
     await waitForAssignment(groups, STALL_GROUP);
     await waitForAssignment(groups, UNCOMMITTED_GROUP);
 
+    const clusterId = (await admin.getClusterInfo()).clusterId;
     await lagStore.recordBatch([
       {
-        clusterId: 'integration',
+        clusterId,
         topic: TOPIC,
         consumerGroup: STALL_GROUP,
         partition: 0,
@@ -186,7 +187,7 @@ describe('diagnose_consumer_group', () => {
       }),
       new LagStore(broken),
       new IncidentStore(broken),
-      new CorrelationService({ logger: silentLogger() }),
+      new CorrelationService({}),
       { imbalanceRatio: 5, stallWindowSeconds: 60, logger: silentLogger() },
     );
     try {

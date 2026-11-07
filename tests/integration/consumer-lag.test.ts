@@ -180,6 +180,7 @@ describe('consumer lag', () => {
   it('persists observations to lag history on every lag call', async () => {
     const service = serviceFor(brokers, lagStore);
     await service.getConsumerLag(GROUP, TOPIC);
+    await service.flushHistory();
 
     const partitionZero = await lagStore.queryHistory({
       groupId: GROUP,

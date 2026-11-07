@@ -2,25 +2,38 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 
 import { AppError } from '../errors/app-error.js';
 
 const MIGRATIONS_TABLE = 'schema_migrations';
+// Stable application-wide key for the migration advisory lock. Any process
+// using this code serializes schema changes on the same key.
+const MIGRATION_LOCK_KEY = 7_341_928_465;
 
 export function migrationsDirectory(): string {
   return path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations');
 }
 
-/** Applies pending SQL files in name order. Safe to run more than once. */
+/**
+ * Applies pending SQL files in name order. A session advisory lock makes
+ * concurrent `migrate` processes safe, and each file runs as one transaction
+ * using the raw SQL (no naive `;` splitting).
+ */
 export async function applyMigrations(pool: Pool): Promise<string[]> {
+  let client: PoolClient | undefined;
+  let locked = false;
   try {
-    await pool.query(
+    client = await pool.connect();
+    await client.query(
       `CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
         version TEXT PRIMARY KEY,
         applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )`,
     );
+    await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
+    locked = true;
+
     // Byte order: migration files must stay zero-padded (001, 002, ...) so
     // plain code-unit sorting matches version order under every locale.
     const files = (await readdir(migrationsDirectory()))
@@ -28,17 +41,14 @@ export async function applyMigrations(pool: Pool): Promise<string[]> {
       .sort();
     const applied: string[] = [];
     for (const file of files) {
-      const found = await pool.query(`SELECT 1 FROM ${MIGRATIONS_TABLE} WHERE version = $1`, [
+      const found = await client.query(`SELECT 1 FROM ${MIGRATIONS_TABLE} WHERE version = $1`, [
         file,
       ]);
       if ((found.rowCount ?? 0) > 0) continue;
       const sql = await readFile(path.join(migrationsDirectory(), file), 'utf8');
-      const client = await pool.connect();
+      await client.query('BEGIN');
       try {
-        await client.query('BEGIN');
-        for (const statement of sqlStatements(sql)) {
-          await client.query(statement);
-        }
+        await client.query(sql);
         await client.query(`INSERT INTO ${MIGRATIONS_TABLE} (version) VALUES ($1)`, [file]);
         await client.query('COMMIT');
         applied.push(file);
@@ -49,8 +59,6 @@ export async function applyMigrations(pool: Pool): Promise<string[]> {
           file,
           cause: err instanceof Error ? err.message : String(err),
         });
-      } finally {
-        client.release();
       }
     }
     return applied;
@@ -60,16 +68,14 @@ export async function applyMigrations(pool: Pool): Promise<string[]> {
       store: 'postgres',
       cause: err instanceof Error ? err.message : String(err),
     });
+  } finally {
+    if (client !== undefined) {
+      if (locked) {
+        await client
+          .query('SELECT pg_advisory_unlock($1)', [MIGRATION_LOCK_KEY])
+          .catch(() => undefined);
+      }
+      client.release();
+    }
   }
-}
-
-export function sqlStatements(sql: string): string[] {
-  const withoutComments = sql
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('--'))
-    .join('\n');
-  return withoutComments
-    .split(';')
-    .map((statement) => statement.trim())
-    .filter((statement) => statement.length > 0);
 }
