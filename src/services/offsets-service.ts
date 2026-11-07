@@ -58,6 +58,13 @@ export interface GroupLagResult {
   observedAt: string;
 }
 
+export interface OffsetsServiceOptions {
+  lagStore?: LagStore | undefined;
+  logger?: Logger | undefined;
+  metrics?: Metrics | undefined;
+  session?: KafkaAdminSession | undefined;
+}
+
 export class OffsetsService {
   private readonly session: KafkaAdminSession;
   private readonly consumerGroups: ConsumerGroupsService;
@@ -69,16 +76,13 @@ export class OffsetsService {
   constructor(
     kafka: Kafka,
     consumerGroups: ConsumerGroupsService,
-    lagStore?: LagStore,
-    logger?: Logger,
-    metrics?: Metrics,
-    session?: KafkaAdminSession,
+    options: OffsetsServiceOptions = {},
   ) {
-    this.session = session ?? new KafkaAdminSession(kafka);
+    this.session = options.session ?? new KafkaAdminSession(kafka);
     this.consumerGroups = consumerGroups;
-    this.lagStore = lagStore;
-    this.logger = logger;
-    this.metrics = metrics ?? noopMetrics;
+    this.lagStore = options.lagStore;
+    this.logger = options.logger;
+    this.metrics = options.metrics ?? noopMetrics;
   }
 
   async getConsumerLag(groupId: string, topic?: string): Promise<TopicLagResult | GroupLagResult> {

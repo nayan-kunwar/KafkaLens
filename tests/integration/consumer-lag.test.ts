@@ -29,7 +29,7 @@ function envFor(brokers: string): NodeJS.ProcessEnv {
 
 function serviceFor(brokers: string, lagStore?: LagStore): OffsetsService {
   const kafka = createKafka(loadEnv(envFor(brokers)), silentLogger());
-  return new OffsetsService(kafka, new ConsumerGroupsService(kafka), lagStore);
+  return new OffsetsService(kafka, new ConsumerGroupsService(kafka), { lagStore });
 }
 
 async function expectAppError(promise: Promise<unknown>, code: string): Promise<AppError> {

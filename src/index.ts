@@ -67,14 +67,12 @@ async function main(): Promise<void> {
   const incidentStore = new IncidentStore(pool);
   logger.info('schema is applied by npm run migrate, not during server startup');
 
-  const offsetsService = new OffsetsService(
-    kafka,
-    consumerGroupsService,
+  const offsetsService = new OffsetsService(kafka, consumerGroupsService, {
     lagStore,
     logger,
     metrics,
     session,
-  );
+  });
   const correlation = new CorrelationService({
     githubRepository: env.GITHUB_REPOSITORY,
     githubToken: env.GITHUB_TOKEN,

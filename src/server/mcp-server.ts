@@ -96,11 +96,11 @@ export function createMcpServer(deps: ServerDeps): McpServer {
       description: 'Returns server liveness. No Kafka access required.',
     },
     () =>
-      runToolCall((toolCallId) => {
+      runToolCall(() => {
         const started = Date.now();
         const durationMs = Date.now() - started;
         metrics.toolCall('health_check', durationMs);
-        deps.logger.debug({ tool: 'health_check', toolCallId, durationMs }, 'tool completed');
+        deps.logger.debug({ tool: 'health_check', durationMs }, 'tool completed');
         return Promise.resolve({
           content: [{ type: 'text' as const, text: 'kafka-lens is running' }],
         });

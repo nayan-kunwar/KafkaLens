@@ -112,7 +112,7 @@ describe('diagnose_consumer_group', () => {
     session = new KafkaAdminSession(kafka);
     admin = new AdminService(kafka, { session, logger });
     groups = new ConsumerGroupsService(kafka, { session, logger });
-    const offsets = new OffsetsService(kafka, groups, lagStore, logger, undefined, session);
+    const offsets = new OffsetsService(kafka, groups, { lagStore, logger, session });
     diagnosis = new DiagnosisService(
       admin,
       groups,
@@ -179,14 +179,11 @@ describe('diagnose_consumer_group', () => {
     const offline = new DiagnosisService(
       admin,
       groups,
-      new OffsetsService(
-        kafkaClient,
-        groups,
-        new LagStore(broken),
-        silentLogger(),
-        undefined,
+      new OffsetsService(kafkaClient, groups, {
+        lagStore: new LagStore(broken),
+        logger: silentLogger(),
         session,
-      ),
+      }),
       new LagStore(broken),
       new IncidentStore(broken),
       new CorrelationService({ logger: silentLogger() }),

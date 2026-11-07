@@ -11,13 +11,13 @@ export function executeTool(
   run: () => Promise<unknown>,
   metrics: Metrics = noopMetrics,
 ): Promise<CallToolResult> {
-  return runToolCall((toolCallId) => {
+  return runToolCall(() => {
     const startedAt = Date.now();
     return run().then(
       (data) => {
         const durationMs = Date.now() - startedAt;
         metrics.toolCall(tool, durationMs);
-        logger.debug({ tool, toolCallId, durationMs }, 'tool completed');
+        logger.debug({ tool, durationMs }, 'tool completed');
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
         };
@@ -26,7 +26,7 @@ export function executeTool(
         const durationMs = Date.now() - startedAt;
         const appError = err instanceof AppError ? err : new AppError('INTERNAL', 'Tool failed');
         metrics.toolCall(tool, durationMs, appError.code);
-        logger.warn({ tool, toolCallId, durationMs, error: appError.toJSON() }, 'tool failed');
+        logger.warn({ tool, durationMs, error: appError.toJSON() }, 'tool failed');
         return {
           isError: true,
           content: [{ type: 'text' as const, text: JSON.stringify(appError.toJSON()) }],

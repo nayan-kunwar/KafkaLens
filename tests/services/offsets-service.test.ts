@@ -318,8 +318,10 @@ describe('lag history recording', () => {
     return new OffsetsService(
       kafka as unknown as Kafka,
       consumerGroups as unknown as ConsumerGroupsService,
-      lagStore as LagStore,
-      silentLogger,
+      {
+        lagStore: lagStore as LagStore,
+        logger: silentLogger,
+      },
     );
   }
 
@@ -387,12 +389,14 @@ describe('lag history recording', () => {
       kafka as unknown as Kafka,
       consumerGroups as unknown as ConsumerGroupsService,
       {
-        recordBatch: () => {
-          recorded += 1;
-          return Promise.resolve();
-        },
-      } as unknown as LagStore,
-      silentLogger,
+        lagStore: {
+          recordBatch: () => {
+            recorded += 1;
+            return Promise.resolve();
+          },
+        } as unknown as LagStore,
+        logger: silentLogger,
+      },
     );
 
     const result = (await service.getConsumerLag(GROUP, TOPIC)) as TopicLagResult;

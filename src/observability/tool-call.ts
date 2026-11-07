@@ -13,18 +13,20 @@ export function toolCallBindings(): { toolCallId: string } | Record<string, neve
   return toolCallId === undefined ? {} : { toolCallId };
 }
 
-export function runToolCall<T>(fn: (toolCallId: string) => Promise<T>): Promise<T> {
+export function runToolCall<T>(fn: () => Promise<T>): Promise<T> {
   const toolCallId = randomUUID();
-  return storage.run(toolCallId, () => fn(toolCallId));
+  return storage.run(toolCallId, fn);
 }
 
-/** Debug line emitted next to a metric observation. No-op outside a tool call. */
+/**
+ * Debug line emitted next to a metric observation. No-op outside a tool call,
+ * where the logger mixin supplies the toolCallId.
+ */
 export function logTiming(
   logger: { debug: (obj: object, msg: string) => void } | undefined,
   event: string,
   fields: Record<string, string | number>,
 ): void {
-  const toolCallId = currentToolCallId();
-  if (logger === undefined || toolCallId === undefined) return;
-  logger.debug({ ...fields, toolCallId }, event);
+  if (logger === undefined || currentToolCallId() === undefined) return;
+  logger.debug(fields, event);
 }
