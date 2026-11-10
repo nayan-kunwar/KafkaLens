@@ -6,15 +6,15 @@
 
 ## Status
 
-Version **0.2.1**. Milestones M0–M20 are implemented. The server is read-only. PLAINTEXT and SASL/SSL are supported.
+Version **0.2.2**. Milestones M0–M20 are implemented. The server is read-only. PLAINTEXT and SASL/SSL are supported.
 
-The investigation entry point is `diagnose_consumer_group`. How to read its output is in [docs/diagnosis.md](docs/diagnosis.md). A captured run is in [docs/examples/partition-hotspot.md](docs/examples/partition-hotspot.md). ACLs, migrations, retention, and readiness are in [docs/operations.md](docs/operations.md).
+The investigation entry point is `diagnose_consumer_group`. How to read its output is in [docs/diagnosis.md](docs/diagnosis.md). Captured runs for all four demo scenarios are in [docs/examples/](docs/examples/). ACLs, migrations, retention, and readiness are in [docs/operations.md](docs/operations.md); production deployment is in [docs/deployment.md](docs/deployment.md).
 
 New to MCP? Hands-on notes from building this server live in [docs/mcp/](docs/mcp/).
 
 ## Requirements
 
-- Node.js >= 20
+- Node.js >= 22.22
 - Docker (integration tests and the demo stack)
 
 ## Getting started

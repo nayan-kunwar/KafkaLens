@@ -146,7 +146,9 @@ npm audit --audit-level=moderate
 ### Infrastructure and quality
 
 - L-5: the build cleans `dist`/`dist-demo`; the production image has no demo output or source maps;
-  the demo is a separate Docker stage; Node is pinned to `22.20.0-alpine`.
+  the demo is a separate Docker stage; Node is pinned to `22.22.0-alpine`. The Compose
+  `kafka-lens` service builds the `runtime` target explicitly, because the last Dockerfile
+  stage is the demo image and has no default command.
 - M-9/M-13: tool failures log the original cause and stack while returning only `AppError`;
   MCP registration is typed with `ToolCallback`/`ZodRawShapeCompat` instead of `as never`.
 - M-14: CI runs integration tests on pull requests and enforces both the production and full dependency
@@ -155,16 +157,19 @@ npm audit --audit-level=moderate
 - L-10: shutdown moved to `createShutdownHandler()` with tests for idempotence, flush ordering,
   failure tolerance, and forced exit. `runMigrateCli()` and `runRetainCli()` return exit codes and
   are tested with injected pools, including structured failures and invalid configuration.
-- Dev advisories: `overrides` pin `minimatch` to `^11.0.1` and `glob` to `^14.0.2`. Both provide
+- Dev advisories: `overrides` pin `minimatch` to `^11.0.5` and `glob` to `^14.0.4`. Both provide
   CommonJS exports, and the ESLint toolchain plus an archiver glob/directory smoke test pass.
-  Remove the overrides once ESLint, TypeScript-ESLint, and Testcontainers widen their ranges.
+  Re-checked on 2026-11-10: ESLint, TypeScript-ESLint, and Testcontainers still resolve vulnerable
+  older ranges, so removing the overrides reintroduces 18 moderate advisories. Remove them once
+  those packages widen their dependency ranges.
 
 ### Accepted risks
 
 - Local Compose Kafka remains PLAINTEXT because it is loopback-only. Production deployments must
   configure SASL/TLS and explicit endpoints; `NODE_ENV=production` rejects localhost defaults.
-- `testcontainers@12.2.1` warns that Node `>=22.22` is required while local Node is `22.20.0`.
-  The Docker image is pinned to `22.20.0-alpine`; the warning does not affect the suite.
+- `testcontainers@12.2.1` requires Node `>=22.22`. The project now requires Node 22.22 or newer:
+  `engines`, `.nvmrc`, the Docker images, and CI are pinned to 22.22.0. A local Node 22.20
+  installation still runs the suite but npm reports the engine mismatch.
 
 ## Verification log
 
@@ -186,3 +191,10 @@ npm audit --audit-level=moderate
 | 2026-11-07 | Finalization | `npm audit --audit-level=moderate`        | 0 vulnerabilities (including dev)         |
 | 2026-11-07 | Finalization | `docker build --target demo`              | Demo and runtime stages built clean       |
 | 2026-11-07 | Finalization | runtime image inspection                  | No `dist-demo` output and no `.map` files |
+| 2026-11-10 | Release      | `npm run check`                           | 263/263 unit tests passing                |
+| 2026-11-10 | Release      | `npm run build && npm run build:demo`     | Passing                                   |
+| 2026-11-10 | Release      | `npm run test:integration`                | 25/25 passing                             |
+| 2026-11-10 | Release      | `npm audit --audit-level=moderate`        | 0 vulnerabilities (including dev)         |
+| 2026-11-10 | Release      | `docker build --target demo` / runtime    | Passing; runtime Node v22.22.0            |
+| 2026-11-10 | Release      | runtime image inspection                  | No `dist-demo` output and no `.map` files |
+| 2026-11-10 | Release      | demo scenarios                            | Four captures in `docs/examples/`         |

@@ -1,5 +1,7 @@
 # Operations
 
+For image, secrets, migrations, retention scheduling, metrics exposure, and upgrade steps, see [deployment.md](deployment.md).
+
 ## Kafka ACLs
 
 This client is read-only. Grant only:

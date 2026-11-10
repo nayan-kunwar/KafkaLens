@@ -63,7 +63,9 @@ services:
       retries: 10
 
   kafka-lens:
-    build: .
+    build:
+      context: .
+      target: runtime
     stdin_open: true
     tty: true
     environment:

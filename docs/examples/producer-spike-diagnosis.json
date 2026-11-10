@@ -1,0 +1,386 @@
+{
+  "status": "attention",
+  "findings": [
+    {
+      "type": "PRODUCER_OUTPACING_CONSUMER",
+      "severity": "high",
+      "confidence": 0.75,
+      "evidence": [
+        "Estimated incoming rate: 76.449 messages/second over about 27.077s (0 partitions excluded).",
+        "Estimated processing rate: 2.031 messages/second over about 27.077s (0 partitions excluded).",
+        "Estimated lag growth: 74.417 messages/second over about 27.077s (0 partitions excluded).",
+        "These rates are estimates from stored high watermarks and committed offsets. They are not broker producer metrics.",
+        "Estimated incoming rate exceeded estimated processing rate while lag was growing. That is a possible reason for the increase."
+      ],
+      "recommendations": [
+        "Treat the rates as estimates and confirm them with producer metrics if you have them.",
+        "Inspect consumer handler time before changing partition count or producer traffic."
+      ]
+    },
+    {
+      "type": "INSUFFICIENT_CONSUMER_CAPACITY",
+      "severity": "medium",
+      "confidence": 0.58,
+      "evidence": [
+        "Possible capacity limit: 1 member(s) for 3 partition(s) while estimated incoming rate exceeds estimated processing rate and lag is growing. One member can read every partition, so this is a hypothesis, not a measurement of saturation."
+      ],
+      "recommendations": [
+        "Compare processing rate with the current membership before adding consumers.",
+        "Check per-partition handler time. Extra members only help when work is spread across partitions."
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "kind": "observed_fact",
+      "text": "Consumer group spike-consumer on spike-events is Stable with 1 member(s) and 3 partition(s) in this response."
+    },
+    {
+      "kind": "observed_fact",
+      "text": "Known total lag is 2065. 0 partition(s) have unknown lag."
+    },
+    {
+      "kind": "derived_metric",
+      "text": "Known lag across 3 partitions: total 2065, min 688, max 689, mean 688.33, median 688."
+    },
+    {
+      "kind": "derived_metric",
+      "text": "Population standard deviation of known lag is 0.47."
+    },
+    {
+      "kind": "derived_metric",
+      "text": "Max/min known lag ratio is 1. The configured PARTITION_IMBALANCE_RATIO is 5."
+    },
+    {
+      "kind": "derived_metric",
+      "text": "Estimated incoming rate: 76.449 messages/second over about 27.077s (0 partitions excluded)."
+    },
+    {
+      "kind": "derived_metric",
+      "text": "Estimated processing rate: 2.031 messages/second over about 27.077s (0 partitions excluded)."
+    },
+    {
+      "kind": "derived_metric",
+      "text": "Estimated lag growth: 74.417 messages/second over about 27.077s (0 partitions excluded)."
+    },
+    {
+      "kind": "derived_metric",
+      "text": "These rates are estimates from stored high watermarks and committed offsets. They are not broker producer metrics."
+    },
+    {
+      "kind": "derived_metric",
+      "text": "Estimated incoming rate exceeded estimated processing rate while lag was growing. That is a possible reason for the increase."
+    },
+    {
+      "kind": "observed_fact",
+      "text": "Partition 0 samples span 27s, which is below 80% of the 60s stall window."
+    },
+    {
+      "kind": "observed_fact",
+      "text": "Partition 1 samples span 27s, which is below 80% of the 60s stall window."
+    },
+    {
+      "kind": "observed_fact",
+      "text": "Partition 2 samples span 27s, which is below 80% of the 60s stall window."
+    },
+    {
+      "kind": "inference",
+      "text": "PRODUCER_OUTPACING_CONSUMER (high, confidence 0.75): Evidence suggests the estimated incoming rate is above the estimated processing rate while lag grows."
+    },
+    {
+      "kind": "inference",
+      "text": "INSUFFICIENT_CONSUMER_CAPACITY (medium, confidence 0.58): Evidence suggests the group may not have enough active members for the current lag. This is a capacity hypothesis."
+    },
+    {
+      "kind": "recommendation",
+      "text": "Treat the rates as estimates and confirm them with producer metrics if you have them."
+    },
+    {
+      "kind": "recommendation",
+      "text": "Inspect consumer handler time before changing partition count or producer traffic."
+    },
+    {
+      "kind": "recommendation",
+      "text": "Compare processing rate with the current membership before adding consumers."
+    },
+    {
+      "kind": "recommendation",
+      "text": "Check per-partition handler time. Extra members only help when work is spread across partitions."
+    }
+  ],
+  "likelyCauses": [
+    "PRODUCER_OUTPACING_CONSUMER (high, confidence 0.75): Evidence suggests the estimated incoming rate is above the estimated processing rate while lag grows.",
+    "INSUFFICIENT_CONSUMER_CAPACITY (medium, confidence 0.58): Evidence suggests the group may not have enough active members for the current lag. This is a capacity hypothesis."
+  ],
+  "confidence": 0.75,
+  "recommendedSteps": [
+    "Treat the rates as estimates and confirm them with producer metrics if you have them.",
+    "Inspect consumer handler time before changing partition count or producer traffic.",
+    "Compare processing rate with the current membership before adding consumers.",
+    "Check per-partition handler time. Extra members only help when work is spread across partitions."
+  ],
+  "impact": {
+    "totalLag": "2065",
+    "unknownPartitionCount": 0,
+    "laggingPartitionCount": 3,
+    "highestSeverity": "high",
+    "summary": "Known total lag is 2065 across 3 lagging partition(s), with 0 unknown partition(s). Top finding is PRODUCER_OUTPACING_CONSUMER."
+  },
+  "timeline": {
+    "windowSeconds": 60,
+    "sampleCount": 9,
+    "earliestObservedAt": "2026-11-10T13:50:52.889Z",
+    "latestObservedAt": "2026-11-10T13:51:19.966Z",
+    "historyAvailable": true
+  },
+  "imbalance": {
+    "insufficientEvidence": false,
+    "knownPartitionCount": 3,
+    "unknownPartitionCount": 0,
+    "totalKnownLag": "2065",
+    "min": "688",
+    "max": "689",
+    "mean": "688.33",
+    "median": "688",
+    "stdDev": "0.47",
+    "maxMinRatio": "1",
+    "outlierPartitionIds": [],
+    "shares": [
+      {
+        "partitionId": 2,
+        "lag": "689",
+        "share": 0.3336
+      },
+      {
+        "partitionId": 0,
+        "lag": "688",
+        "share": 0.3331
+      },
+      {
+        "partitionId": 1,
+        "lag": "688",
+        "share": 0.3331
+      }
+    ],
+    "sharesTruncated": false,
+    "evidence": [
+      "Known lag across 3 partitions: total 2065, min 688, max 689, mean 688.33, median 688.",
+      "Population standard deviation of known lag is 0.47.",
+      "Max/min known lag ratio is 1. The configured PARTITION_IMBALANCE_RATIO is 5."
+    ],
+    "finding": null
+  },
+  "stall": {
+    "windowSeconds": 60,
+    "partitions": [
+      {
+        "partitionId": 0,
+        "progress": "INSUFFICIENT_EVIDENCE",
+        "evidence": ["Partition 0 samples span 27s, which is below 80% of the 60s stall window."]
+      },
+      {
+        "partitionId": 1,
+        "progress": "INSUFFICIENT_EVIDENCE",
+        "evidence": ["Partition 1 samples span 27s, which is below 80% of the 60s stall window."]
+      },
+      {
+        "partitionId": 2,
+        "progress": "INSUFFICIENT_EVIDENCE",
+        "evidence": ["Partition 2 samples span 27s, which is below 80% of the 60s stall window."]
+      }
+    ],
+    "groupProgress": "INSUFFICIENT_EVIDENCE",
+    "finding": null,
+    "slowFinding": null
+  },
+  "throughput": {
+    "incoming": {
+      "messagesPerSecond": 76.449,
+      "sampleCount": 9,
+      "windowSeconds": 27.077,
+      "excludedPartitionCount": 0,
+      "label": "estimate",
+      "insufficientEvidence": false
+    },
+    "processing": {
+      "messagesPerSecond": 2.031,
+      "sampleCount": 9,
+      "windowSeconds": 27.077,
+      "excludedPartitionCount": 0,
+      "label": "estimate",
+      "insufficientEvidence": false
+    },
+    "lagGrowth": {
+      "messagesPerSecond": 74.417,
+      "sampleCount": 9,
+      "windowSeconds": 27.077,
+      "excludedPartitionCount": 0,
+      "label": "estimate",
+      "insufficientEvidence": false
+    },
+    "producerOutpacing": true,
+    "evidence": [
+      "Estimated incoming rate: 76.449 messages/second over about 27.077s (0 partitions excluded).",
+      "Estimated processing rate: 2.031 messages/second over about 27.077s (0 partitions excluded).",
+      "Estimated lag growth: 74.417 messages/second over about 27.077s (0 partitions excluded).",
+      "These rates are estimates from stored high watermarks and committed offsets. They are not broker producer metrics.",
+      "Estimated incoming rate exceeded estimated processing rate while lag was growing. That is a possible reason for the increase."
+    ],
+    "finding": {
+      "type": "PRODUCER_OUTPACING_CONSUMER",
+      "severity": "high",
+      "confidence": 0.75,
+      "evidence": [
+        "Estimated incoming rate: 76.449 messages/second over about 27.077s (0 partitions excluded).",
+        "Estimated processing rate: 2.031 messages/second over about 27.077s (0 partitions excluded).",
+        "Estimated lag growth: 74.417 messages/second over about 27.077s (0 partitions excluded).",
+        "These rates are estimates from stored high watermarks and committed offsets. They are not broker producer metrics.",
+        "Estimated incoming rate exceeded estimated processing rate while lag was growing. That is a possible reason for the increase."
+      ],
+      "recommendations": [
+        "Treat the rates as estimates and confirm them with producer metrics if you have them.",
+        "Inspect consumer handler time before changing partition count or producer traffic."
+      ]
+    }
+  },
+  "groupId": "spike-consumer",
+  "topic": "spike-events",
+  "observedAt": "2026-11-10T13:51:19.941Z",
+  "group": {
+    "state": "Stable",
+    "protocolType": "consumer",
+    "protocol": "RoundRobinAssigner",
+    "memberCount": 1
+  },
+  "topicPartitionCount": 3,
+  "partitions": [
+    {
+      "partitionId": 0,
+      "highWatermark": "714",
+      "committedOffset": "26",
+      "lag": "688",
+      "assigned": true,
+      "progress": "INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "partitionId": 1,
+      "highWatermark": "713",
+      "committedOffset": "25",
+      "lag": "688",
+      "assigned": true,
+      "progress": "INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "partitionId": 2,
+      "highWatermark": "714",
+      "committedOffset": "25",
+      "lag": "689",
+      "assigned": true,
+      "progress": "INSUFFICIENT_EVIDENCE"
+    }
+  ],
+  "partitionsTruncated": false,
+  "assignmentsKnown": true,
+  "relatedIncidents": {
+    "status": "ok",
+    "incidents": [
+      {
+        "id": "1",
+        "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+        "topic": "spike-events",
+        "consumerGroup": "spike-consumer",
+        "findingTypes": ["INSUFFICIENT_CONSUMER_CAPACITY"],
+        "severity": "high",
+        "summary": "INSUFFICIENT_CONSUMER_CAPACITY on spike-consumer/spike-events. Known total lag is 1200 across 3 lagging partition(s), with 0 unknown partition(s). Top finding is INSUFFICIENT_CONSUMER_CAPACITY.",
+        "evidence": [
+          "Consumer group spike-consumer has 0 members while known lag is 1200. No member is assigned. This does not by itself show that a process crashed."
+        ],
+        "observedAt": "2026-11-10T13:41:58.632Z",
+        "score": 0.9
+      },
+      {
+        "id": "6",
+        "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+        "topic": "spike-events",
+        "consumerGroup": "spike-consumer",
+        "findingTypes": ["CONSUMER_STALLED"],
+        "severity": "high",
+        "summary": "CONSUMER_STALLED on spike-consumer/spike-events. Known total lag is 1806 across 3 lagging partition(s), with 0 unknown partition(s). Top finding is CONSUMER_STALLED.",
+        "evidence": [
+          "Partition 2 is assigned and its committed offset stayed at 184 between 2026-11-10T13:46:58.082Z to 2026-11-10T13:47:48.165Z while lag was 602. This shows no progress. It does not show that the process crashed."
+        ],
+        "observedAt": "2026-11-10T13:47:48.140Z",
+        "score": 0.8
+      },
+      {
+        "id": "4",
+        "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+        "topic": "stalled-events",
+        "consumerGroup": "stalled-consumer",
+        "findingTypes": [
+          "CONSUMER_STALLED",
+          "INSUFFICIENT_CONSUMER_CAPACITY",
+          "PRODUCER_OUTPACING_CONSUMER"
+        ],
+        "severity": "high",
+        "summary": "CONSUMER_STALLED on stalled-consumer/stalled-events. Known total lag is 1467 across 3 lagging partition(s), with 0 unknown partition(s). Top finding is CONSUMER_STALLED.",
+        "evidence": [
+          "Partition 0 is assigned and its committed offset stayed at 2 between 2026-11-10T13:44:13.507Z to 2026-11-10T13:45:08.644Z while lag was 489. This shows no progress. It does not show that the process crashed.",
+          "Partition 1 is assigned and its committed offset stayed at 1 between 2026-11-10T13:44:13.507Z to 2026-11-10T13:45:08.644Z while lag was 489. This shows no progress. It does not show that the process crashed.",
+          "Partition 2 is assigned and its committed offset stayed at 2 between 2026-11-10T13:44:13.507Z to 2026-11-10T13:45:08.644Z while lag was 489. This shows no progress. It does not show that the process crashed."
+        ],
+        "observedAt": "2026-11-10T13:45:08.628Z",
+        "score": 0.13
+      },
+      {
+        "id": "3",
+        "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+        "topic": "slow-events",
+        "consumerGroup": "slow-consumer",
+        "findingTypes": [
+          "CONSUMER_STALLED",
+          "INSUFFICIENT_CONSUMER_CAPACITY",
+          "PRODUCER_OUTPACING_CONSUMER"
+        ],
+        "severity": "high",
+        "summary": "CONSUMER_STALLED on slow-consumer/slow-events. Known total lag is 827 across 3 lagging partition(s), with 0 unknown partition(s). Top finding is CONSUMER_STALLED.",
+        "evidence": [
+          "Partition 0 is assigned and its committed offset stayed at 5 between 2026-11-10T13:44:13.445Z to 2026-11-10T13:45:08.586Z while lag was 276. This shows no progress. It does not show that the process crashed.",
+          "Partition 1 is assigned and its committed offset stayed at 5 between 2026-11-10T13:44:13.445Z to 2026-11-10T13:45:08.586Z while lag was 275. This shows no progress. It does not show that the process crashed.",
+          "Partition 2 is assigned and its committed offset stayed at 5 between 2026-11-10T13:44:13.445Z to 2026-11-10T13:45:08.586Z while lag was 276. This shows no progress. It does not show that the process crashed."
+        ],
+        "observedAt": "2026-11-10T13:45:08.563Z",
+        "score": 0.13
+      },
+      {
+        "id": "5",
+        "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+        "topic": "hotspot-events",
+        "consumerGroup": "hotspot-consumer",
+        "findingTypes": [
+          "CONSUMER_STALLED",
+          "INSUFFICIENT_CONSUMER_CAPACITY",
+          "PARTITION_IMBALANCE",
+          "PRODUCER_OUTPACING_CONSUMER"
+        ],
+        "severity": "high",
+        "summary": "PARTITION_IMBALANCE on hotspot-consumer/hotspot-events. Known total lag is 2573 across 6 lagging partition(s), with 0 unknown partition(s). Top finding is PARTITION_IMBALANCE.",
+        "evidence": [
+          "Known lag across 6 partitions: total 2573, min 14, max 2479, mean 428.83, median 20.",
+          "Population standard deviation of known lag is 916.87.",
+          "Max/min known lag ratio is 177.07. The configured PARTITION_IMBALANCE_RATIO is 5.",
+          "Partition 3 lag is 2479, which is 96.3% of known lag."
+        ],
+        "observedAt": "2026-11-10T13:45:08.661Z",
+        "score": 0.1
+      }
+    ],
+    "message": "Scores are deterministic overlaps, not a model judgment."
+  },
+  "correlation": {
+    "status": "not_configured",
+    "events": [],
+    "message": "GitHub repository and deployment source are not configured."
+  },
+  "partialFailures": []
+}

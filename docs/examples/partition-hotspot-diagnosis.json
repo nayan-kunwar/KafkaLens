@@ -6,10 +6,10 @@
       "severity": "high",
       "confidence": 0.95,
       "evidence": [
-        "Known lag across 6 partitions: total 8959, min 26, max 8593, mean 1493.16, median 85.",
-        "Population standard deviation of known lag is 3175.22.",
-        "Max/min known lag ratio is 330.50. The configured PARTITION_IMBALANCE_RATIO is 5.",
-        "Partition 3 lag is 8593, which is 95.9% of known lag."
+        "Known lag across 6 partitions: total 2573, min 14, max 2479, mean 428.83, median 20.",
+        "Population standard deviation of known lag is 916.87.",
+        "Max/min known lag ratio is 177.07. The configured PARTITION_IMBALANCE_RATIO is 5.",
+        "Partition 3 lag is 2479, which is 96.3% of known lag."
       ],
       "recommendations": [
         "Compare message keys for the outlier partitions with the others.",
@@ -22,11 +22,11 @@
       "severity": "high",
       "confidence": 0.84,
       "evidence": [
-        "Partition 0 is assigned and its committed offset stayed at 27 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 81. This shows no progress. It does not show that the process crashed.",
-        "Partition 1 is assigned and its committed offset stayed at 26 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 74. This shows no progress. It does not show that the process crashed.",
-        "Partition 2 is assigned and its committed offset stayed at 76 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 26. This shows no progress. It does not show that the process crashed.",
-        "Partition 3 is assigned and its committed offset stayed at 3665 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 8593. This shows no progress. It does not show that the process crashed.",
-        "Partition 4 is assigned and its committed offset stayed at 10 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 96. This shows no progress. It does not show that the process crashed."
+        "Partition 0 is assigned and its committed offset stayed at 7 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 17. This shows no progress. It does not show that the process crashed.",
+        "Partition 1 is assigned and its committed offset stayed at 2 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 19. This shows no progress. It does not show that the process crashed.",
+        "Partition 2 is assigned and its committed offset stayed at 2 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 23. This shows no progress. It does not show that the process crashed.",
+        "Partition 3 is assigned and its committed offset stayed at 345 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 2479. This shows no progress. It does not show that the process crashed.",
+        "Partition 4 is assigned and its committed offset stayed at 4 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 21. This shows no progress. It does not show that the process crashed."
       ],
       "recommendations": [
         "Check the member assigned to the stalled partition for a blocked handler or a paused consumer over the 60s window.",
@@ -39,9 +39,9 @@
       "severity": "high",
       "confidence": 0.78,
       "evidence": [
-        "Estimated incoming rate: 32.186 messages/second over about 55.925s (0 partitions excluded).",
-        "Estimated processing rate: 0 messages/second over about 55.925s (0 partitions excluded).",
-        "Estimated lag growth: 32.186 messages/second over about 55.925s (0 partitions excluded).",
+        "Estimated incoming rate: 32.08 messages/second over about 55.144s (0 partitions excluded).",
+        "Estimated processing rate: 0 messages/second over about 55.144s (0 partitions excluded).",
+        "Estimated lag growth: 32.08 messages/second over about 55.144s (0 partitions excluded).",
         "These rates are estimates from stored high watermarks and committed offsets. They are not broker producer metrics.",
         "Estimated incoming rate exceeded estimated processing rate while lag was growing. That is a possible reason for the increase."
       ],
@@ -70,35 +70,35 @@
     },
     {
       "kind": "observed_fact",
-      "text": "Known total lag is 8959. 0 partition(s) have unknown lag."
+      "text": "Known total lag is 2573. 0 partition(s) have unknown lag."
     },
     {
       "kind": "derived_metric",
-      "text": "Known lag across 6 partitions: total 8959, min 26, max 8593, mean 1493.16, median 85."
+      "text": "Known lag across 6 partitions: total 2573, min 14, max 2479, mean 428.83, median 20."
     },
     {
       "kind": "derived_metric",
-      "text": "Population standard deviation of known lag is 3175.22."
+      "text": "Population standard deviation of known lag is 916.87."
     },
     {
       "kind": "derived_metric",
-      "text": "Max/min known lag ratio is 330.50. The configured PARTITION_IMBALANCE_RATIO is 5."
+      "text": "Max/min known lag ratio is 177.07. The configured PARTITION_IMBALANCE_RATIO is 5."
     },
     {
       "kind": "derived_metric",
-      "text": "Partition 3 lag is 8593, which is 95.9% of known lag."
+      "text": "Partition 3 lag is 2479, which is 96.3% of known lag."
     },
     {
       "kind": "derived_metric",
-      "text": "Estimated incoming rate: 32.186 messages/second over about 55.925s (0 partitions excluded)."
+      "text": "Estimated incoming rate: 32.08 messages/second over about 55.144s (0 partitions excluded)."
     },
     {
       "kind": "derived_metric",
-      "text": "Estimated processing rate: 0 messages/second over about 55.925s (0 partitions excluded)."
+      "text": "Estimated processing rate: 0 messages/second over about 55.144s (0 partitions excluded)."
     },
     {
       "kind": "derived_metric",
-      "text": "Estimated lag growth: 32.186 messages/second over about 55.925s (0 partitions excluded)."
+      "text": "Estimated lag growth: 32.08 messages/second over about 55.144s (0 partitions excluded)."
     },
     {
       "kind": "derived_metric",
@@ -110,27 +110,27 @@
     },
     {
       "kind": "observed_fact",
-      "text": "Partition 0 is assigned and its committed offset stayed at 27 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 81. This shows no progress. It does not show that the process crashed."
+      "text": "Partition 0 is assigned and its committed offset stayed at 7 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 17. This shows no progress. It does not show that the process crashed."
     },
     {
       "kind": "observed_fact",
-      "text": "Partition 1 is assigned and its committed offset stayed at 26 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 74. This shows no progress. It does not show that the process crashed."
+      "text": "Partition 1 is assigned and its committed offset stayed at 2 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 19. This shows no progress. It does not show that the process crashed."
     },
     {
       "kind": "observed_fact",
-      "text": "Partition 2 is assigned and its committed offset stayed at 76 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 26. This shows no progress. It does not show that the process crashed."
+      "text": "Partition 2 is assigned and its committed offset stayed at 2 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 23. This shows no progress. It does not show that the process crashed."
     },
     {
       "kind": "observed_fact",
-      "text": "Partition 3 is assigned and its committed offset stayed at 3665 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 8593. This shows no progress. It does not show that the process crashed."
+      "text": "Partition 3 is assigned and its committed offset stayed at 345 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 2479. This shows no progress. It does not show that the process crashed."
     },
     {
       "kind": "observed_fact",
-      "text": "Partition 4 is assigned and its committed offset stayed at 10 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 96. This shows no progress. It does not show that the process crashed."
+      "text": "Partition 4 is assigned and its committed offset stayed at 4 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 21. This shows no progress. It does not show that the process crashed."
     },
     {
       "kind": "observed_fact",
-      "text": "Partition 5 is assigned and its committed offset stayed at 11 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 89. This shows no progress. It does not show that the process crashed."
+      "text": "Partition 5 is assigned and its committed offset stayed at 11 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 14. This shows no progress. It does not show that the process crashed."
     },
     {
       "kind": "inference",
@@ -209,79 +209,79 @@
     "Check per-partition handler time. Extra members only help when work is spread across partitions."
   ],
   "impact": {
-    "totalLag": "8959",
+    "totalLag": "2573",
     "unknownPartitionCount": 0,
     "laggingPartitionCount": 6,
     "highestSeverity": "high",
-    "summary": "Known total lag is 8959 across 6 lagging partition(s), with 0 unknown partition(s). Top finding is PARTITION_IMBALANCE."
+    "summary": "Known total lag is 2573 across 6 lagging partition(s), with 0 unknown partition(s). Top finding is PARTITION_IMBALANCE."
   },
   "timeline": {
     "windowSeconds": 60,
     "sampleCount": 18,
-    "earliestObservedAt": "2026-10-14T17:57:28.438Z",
-    "latestObservedAt": "2026-10-14T17:58:24.363Z",
+    "earliestObservedAt": "2026-11-10T13:44:13.537Z",
+    "latestObservedAt": "2026-11-10T13:45:08.681Z",
     "historyAvailable": true
   },
   "imbalance": {
     "insufficientEvidence": false,
     "knownPartitionCount": 6,
     "unknownPartitionCount": 0,
-    "totalKnownLag": "8959",
-    "min": "26",
-    "max": "8593",
-    "mean": "1493.16",
-    "median": "85",
-    "stdDev": "3175.22",
-    "maxMinRatio": "330.50",
+    "totalKnownLag": "2573",
+    "min": "14",
+    "max": "2479",
+    "mean": "428.83",
+    "median": "20",
+    "stdDev": "916.87",
+    "maxMinRatio": "177.07",
     "outlierPartitionIds": [3],
     "shares": [
       {
         "partitionId": 3,
-        "lag": "8593",
-        "share": 0.9591
-      },
-      {
-        "partitionId": 4,
-        "lag": "96",
-        "share": 0.0107
-      },
-      {
-        "partitionId": 5,
-        "lag": "89",
-        "share": 0.0099
-      },
-      {
-        "partitionId": 0,
-        "lag": "81",
-        "share": 0.009
-      },
-      {
-        "partitionId": 1,
-        "lag": "74",
-        "share": 0.0082
+        "lag": "2479",
+        "share": 0.9634
       },
       {
         "partitionId": 2,
-        "lag": "26",
-        "share": 0.0029
+        "lag": "23",
+        "share": 0.0089
+      },
+      {
+        "partitionId": 4,
+        "lag": "21",
+        "share": 0.0081
+      },
+      {
+        "partitionId": 1,
+        "lag": "19",
+        "share": 0.0073
+      },
+      {
+        "partitionId": 0,
+        "lag": "17",
+        "share": 0.0066
+      },
+      {
+        "partitionId": 5,
+        "lag": "14",
+        "share": 0.0054
       }
     ],
     "sharesTruncated": false,
     "evidence": [
-      "Known lag across 6 partitions: total 8959, min 26, max 8593, mean 1493.16, median 85.",
-      "Population standard deviation of known lag is 3175.22.",
-      "Max/min known lag ratio is 330.50. The configured PARTITION_IMBALANCE_RATIO is 5.",
-      "Partition 3 lag is 8593, which is 95.9% of known lag."
+      "Known lag across 6 partitions: total 2573, min 14, max 2479, mean 428.83, median 20.",
+      "Population standard deviation of known lag is 916.87.",
+      "Max/min known lag ratio is 177.07. The configured PARTITION_IMBALANCE_RATIO is 5.",
+      "Partition 3 lag is 2479, which is 96.3% of known lag."
     ],
     "finding": {
       "type": "PARTITION_IMBALANCE",
       "severity": "high",
       "confidence": 0.95,
       "evidence": [
-        "Known lag across 6 partitions: total 8959, min 26, max 8593, mean 1493.16, median 85.",
-        "Population standard deviation of known lag is 3175.22.",
-        "Max/min known lag ratio is 330.50. The configured PARTITION_IMBALANCE_RATIO is 5.",
-        "Partition 3 lag is 8593, which is 95.9% of known lag."
+        "Known lag across 6 partitions: total 2573, min 14, max 2479, mean 428.83, median 20.",
+        "Population standard deviation of known lag is 916.87.",
+        "Max/min known lag ratio is 177.07. The configured PARTITION_IMBALANCE_RATIO is 5.",
+        "Partition 3 lag is 2479, which is 96.3% of known lag."
       ],
       "recommendations": [
         "Compare message keys for the outlier partitions with the others.",
@@ -297,42 +297,42 @@
         "partitionId": 0,
         "progress": "ASSIGNED_NOT_PROGRESSING",
         "evidence": [
-          "Partition 0 is assigned and its committed offset stayed at 27 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 81. This shows no progress. It does not show that the process crashed."
+          "Partition 0 is assigned and its committed offset stayed at 7 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 17. This shows no progress. It does not show that the process crashed."
         ]
       },
       {
         "partitionId": 1,
         "progress": "ASSIGNED_NOT_PROGRESSING",
         "evidence": [
-          "Partition 1 is assigned and its committed offset stayed at 26 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 74. This shows no progress. It does not show that the process crashed."
+          "Partition 1 is assigned and its committed offset stayed at 2 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 19. This shows no progress. It does not show that the process crashed."
         ]
       },
       {
         "partitionId": 2,
         "progress": "ASSIGNED_NOT_PROGRESSING",
         "evidence": [
-          "Partition 2 is assigned and its committed offset stayed at 76 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 26. This shows no progress. It does not show that the process crashed."
+          "Partition 2 is assigned and its committed offset stayed at 2 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 23. This shows no progress. It does not show that the process crashed."
         ]
       },
       {
         "partitionId": 3,
         "progress": "ASSIGNED_NOT_PROGRESSING",
         "evidence": [
-          "Partition 3 is assigned and its committed offset stayed at 3665 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 8593. This shows no progress. It does not show that the process crashed."
+          "Partition 3 is assigned and its committed offset stayed at 345 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 2479. This shows no progress. It does not show that the process crashed."
         ]
       },
       {
         "partitionId": 4,
         "progress": "ASSIGNED_NOT_PROGRESSING",
         "evidence": [
-          "Partition 4 is assigned and its committed offset stayed at 10 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 96. This shows no progress. It does not show that the process crashed."
+          "Partition 4 is assigned and its committed offset stayed at 4 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 21. This shows no progress. It does not show that the process crashed."
         ]
       },
       {
         "partitionId": 5,
         "progress": "ASSIGNED_NOT_PROGRESSING",
         "evidence": [
-          "Partition 5 is assigned and its committed offset stayed at 11 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 89. This shows no progress. It does not show that the process crashed."
+          "Partition 5 is assigned and its committed offset stayed at 11 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 14. This shows no progress. It does not show that the process crashed."
         ]
       }
     ],
@@ -342,11 +342,11 @@
       "severity": "high",
       "confidence": 0.84,
       "evidence": [
-        "Partition 0 is assigned and its committed offset stayed at 27 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 81. This shows no progress. It does not show that the process crashed.",
-        "Partition 1 is assigned and its committed offset stayed at 26 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 74. This shows no progress. It does not show that the process crashed.",
-        "Partition 2 is assigned and its committed offset stayed at 76 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 26. This shows no progress. It does not show that the process crashed.",
-        "Partition 3 is assigned and its committed offset stayed at 3665 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 8593. This shows no progress. It does not show that the process crashed.",
-        "Partition 4 is assigned and its committed offset stayed at 10 between 2026-10-14T17:57:28.438Z to 2026-10-14T17:58:24.363Z while lag was 96. This shows no progress. It does not show that the process crashed."
+        "Partition 0 is assigned and its committed offset stayed at 7 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 17. This shows no progress. It does not show that the process crashed.",
+        "Partition 1 is assigned and its committed offset stayed at 2 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 19. This shows no progress. It does not show that the process crashed.",
+        "Partition 2 is assigned and its committed offset stayed at 2 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 23. This shows no progress. It does not show that the process crashed.",
+        "Partition 3 is assigned and its committed offset stayed at 345 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 2479. This shows no progress. It does not show that the process crashed.",
+        "Partition 4 is assigned and its committed offset stayed at 4 between 2026-11-10T13:44:13.537Z to 2026-11-10T13:45:08.681Z while lag was 21. This shows no progress. It does not show that the process crashed."
       ],
       "recommendations": [
         "Check the member assigned to the stalled partition for a blocked handler or a paused consumer over the 60s window.",
@@ -358,9 +358,9 @@
   },
   "throughput": {
     "incoming": {
-      "messagesPerSecond": 32.186,
+      "messagesPerSecond": 32.08,
       "sampleCount": 18,
-      "windowSeconds": 55.925,
+      "windowSeconds": 55.144,
       "excludedPartitionCount": 0,
       "label": "estimate",
       "insufficientEvidence": false
@@ -368,24 +368,24 @@
     "processing": {
       "messagesPerSecond": 0,
       "sampleCount": 18,
-      "windowSeconds": 55.925,
+      "windowSeconds": 55.144,
       "excludedPartitionCount": 0,
       "label": "estimate",
       "insufficientEvidence": false
     },
     "lagGrowth": {
-      "messagesPerSecond": 32.186,
+      "messagesPerSecond": 32.08,
       "sampleCount": 18,
-      "windowSeconds": 55.925,
+      "windowSeconds": 55.144,
       "excludedPartitionCount": 0,
       "label": "estimate",
       "insufficientEvidence": false
     },
     "producerOutpacing": true,
     "evidence": [
-      "Estimated incoming rate: 32.186 messages/second over about 55.925s (0 partitions excluded).",
-      "Estimated processing rate: 0 messages/second over about 55.925s (0 partitions excluded).",
-      "Estimated lag growth: 32.186 messages/second over about 55.925s (0 partitions excluded).",
+      "Estimated incoming rate: 32.08 messages/second over about 55.144s (0 partitions excluded).",
+      "Estimated processing rate: 0 messages/second over about 55.144s (0 partitions excluded).",
+      "Estimated lag growth: 32.08 messages/second over about 55.144s (0 partitions excluded).",
       "These rates are estimates from stored high watermarks and committed offsets. They are not broker producer metrics.",
       "Estimated incoming rate exceeded estimated processing rate while lag was growing. That is a possible reason for the increase."
     ],
@@ -394,9 +394,9 @@
       "severity": "high",
       "confidence": 0.78,
       "evidence": [
-        "Estimated incoming rate: 32.186 messages/second over about 55.925s (0 partitions excluded).",
-        "Estimated processing rate: 0 messages/second over about 55.925s (0 partitions excluded).",
-        "Estimated lag growth: 32.186 messages/second over about 55.925s (0 partitions excluded).",
+        "Estimated incoming rate: 32.08 messages/second over about 55.144s (0 partitions excluded).",
+        "Estimated processing rate: 0 messages/second over about 55.144s (0 partitions excluded).",
+        "Estimated lag growth: 32.08 messages/second over about 55.144s (0 partitions excluded).",
         "These rates are estimates from stored high watermarks and committed offsets. They are not broker producer metrics.",
         "Estimated incoming rate exceeded estimated processing rate while lag was growing. That is a possible reason for the increase."
       ],
@@ -408,7 +408,7 @@
   },
   "groupId": "hotspot-consumer",
   "topic": "hotspot-events",
-  "observedAt": "2026-10-14T17:58:23.624Z",
+  "observedAt": "2026-11-10T13:45:08.661Z",
   "group": {
     "state": "Stable",
     "protocolType": "consumer",
@@ -419,49 +419,49 @@
   "partitions": [
     {
       "partitionId": 0,
-      "highWatermark": "108",
-      "committedOffset": "27",
-      "lag": "81",
+      "highWatermark": "24",
+      "committedOffset": "7",
+      "lag": "17",
       "assigned": true,
       "progress": "ASSIGNED_NOT_PROGRESSING"
     },
     {
       "partitionId": 1,
-      "highWatermark": "100",
-      "committedOffset": "26",
-      "lag": "74",
+      "highWatermark": "21",
+      "committedOffset": "2",
+      "lag": "19",
       "assigned": true,
       "progress": "ASSIGNED_NOT_PROGRESSING"
     },
     {
       "partitionId": 2,
-      "highWatermark": "102",
-      "committedOffset": "76",
-      "lag": "26",
+      "highWatermark": "25",
+      "committedOffset": "2",
+      "lag": "23",
       "assigned": true,
       "progress": "ASSIGNED_NOT_PROGRESSING"
     },
     {
       "partitionId": 3,
-      "highWatermark": "12258",
-      "committedOffset": "3665",
-      "lag": "8593",
+      "highWatermark": "2824",
+      "committedOffset": "345",
+      "lag": "2479",
       "assigned": true,
       "progress": "ASSIGNED_NOT_PROGRESSING"
     },
     {
       "partitionId": 4,
-      "highWatermark": "106",
-      "committedOffset": "10",
-      "lag": "96",
+      "highWatermark": "25",
+      "committedOffset": "4",
+      "lag": "21",
       "assigned": true,
       "progress": "ASSIGNED_NOT_PROGRESSING"
     },
     {
       "partitionId": 5,
-      "highWatermark": "100",
+      "highWatermark": "25",
       "committedOffset": "11",
-      "lag": "89",
+      "lag": "14",
       "assigned": true,
       "progress": "ASSIGNED_NOT_PROGRESSING"
     }
@@ -472,21 +472,75 @@
     "status": "ok",
     "incidents": [
       {
-        "id": "1",
+        "id": "2",
         "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
         "topic": "hotspot-events",
         "consumerGroup": "hotspot-consumer",
         "findingTypes": ["PARTITION_IMBALANCE"],
         "severity": "high",
-        "summary": "PARTITION_IMBALANCE on hotspot-consumer/hotspot-events. Known total lag is 1962 across 6 lagging partition(s), with 0 unknown partition(s). Top finding is PARTITION_IMBALANCE.",
+        "summary": "PARTITION_IMBALANCE on hotspot-consumer/hotspot-events. Known total lag is 804 across 4 lagging partition(s), with 0 unknown partition(s). Top finding is PARTITION_IMBALANCE.",
         "evidence": [
-          "Known lag across 6 partitions: total 1962, min 8, max 1893, mean 327, median 15.50.",
-          "Population standard deviation of known lag is 700.35.",
-          "Max/min known lag ratio is 236.62. The configured PARTITION_IMBALANCE_RATIO is 5.",
-          "Partition 3 lag is 1893, which is 96.5% of known lag."
+          "Known lag across 6 partitions: total 804, min 0, max 786, mean 134, median 5.50.",
+          "Population standard deviation of known lag is 291.6.",
+          "Minimum known lag is 0, so max/min is undefined. Outliers are partitions at least 5 times the mean.",
+          "Partition 3 lag is 786, which is 97.8% of known lag."
         ],
-        "observedAt": "2026-10-14T17:47:58.888Z",
+        "observedAt": "2026-11-10T13:44:13.518Z",
         "score": 0.85
+      },
+      {
+        "id": "4",
+        "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+        "topic": "stalled-events",
+        "consumerGroup": "stalled-consumer",
+        "findingTypes": [
+          "CONSUMER_STALLED",
+          "INSUFFICIENT_CONSUMER_CAPACITY",
+          "PRODUCER_OUTPACING_CONSUMER"
+        ],
+        "severity": "high",
+        "summary": "CONSUMER_STALLED on stalled-consumer/stalled-events. Known total lag is 1467 across 3 lagging partition(s), with 0 unknown partition(s). Top finding is CONSUMER_STALLED.",
+        "evidence": [
+          "Partition 0 is assigned and its committed offset stayed at 2 between 2026-11-10T13:44:13.507Z to 2026-11-10T13:45:08.644Z while lag was 489. This shows no progress. It does not show that the process crashed.",
+          "Partition 1 is assigned and its committed offset stayed at 1 between 2026-11-10T13:44:13.507Z to 2026-11-10T13:45:08.644Z while lag was 489. This shows no progress. It does not show that the process crashed.",
+          "Partition 2 is assigned and its committed offset stayed at 2 between 2026-11-10T13:44:13.507Z to 2026-11-10T13:45:08.644Z while lag was 489. This shows no progress. It does not show that the process crashed."
+        ],
+        "observedAt": "2026-11-10T13:45:08.628Z",
+        "score": 0.15
+      },
+      {
+        "id": "3",
+        "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+        "topic": "slow-events",
+        "consumerGroup": "slow-consumer",
+        "findingTypes": [
+          "CONSUMER_STALLED",
+          "INSUFFICIENT_CONSUMER_CAPACITY",
+          "PRODUCER_OUTPACING_CONSUMER"
+        ],
+        "severity": "high",
+        "summary": "CONSUMER_STALLED on slow-consumer/slow-events. Known total lag is 827 across 3 lagging partition(s), with 0 unknown partition(s). Top finding is CONSUMER_STALLED.",
+        "evidence": [
+          "Partition 0 is assigned and its committed offset stayed at 5 between 2026-11-10T13:44:13.445Z to 2026-11-10T13:45:08.586Z while lag was 276. This shows no progress. It does not show that the process crashed.",
+          "Partition 1 is assigned and its committed offset stayed at 5 between 2026-11-10T13:44:13.445Z to 2026-11-10T13:45:08.586Z while lag was 275. This shows no progress. It does not show that the process crashed.",
+          "Partition 2 is assigned and its committed offset stayed at 5 between 2026-11-10T13:44:13.445Z to 2026-11-10T13:45:08.586Z while lag was 276. This shows no progress. It does not show that the process crashed."
+        ],
+        "observedAt": "2026-11-10T13:45:08.563Z",
+        "score": 0.15
+      },
+      {
+        "id": "1",
+        "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+        "topic": "spike-events",
+        "consumerGroup": "spike-consumer",
+        "findingTypes": ["INSUFFICIENT_CONSUMER_CAPACITY"],
+        "severity": "high",
+        "summary": "INSUFFICIENT_CONSUMER_CAPACITY on spike-consumer/spike-events. Known total lag is 1200 across 3 lagging partition(s), with 0 unknown partition(s). Top finding is INSUFFICIENT_CONSUMER_CAPACITY.",
+        "evidence": [
+          "Consumer group spike-consumer has 0 members while known lag is 1200. No member is assigned. This does not by itself show that a process crashed."
+        ],
+        "observedAt": "2026-11-10T13:41:58.632Z",
+        "score": 0.05
       }
     ],
     "message": "Scores are deterministic overlaps, not a model judgment."
